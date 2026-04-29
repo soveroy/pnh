@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import * as ExcelJS from 'exceljs';
 
+export const runtime = 'edge';
+
 export interface GridRowData {
   id: string;
   employeeCode: string;
