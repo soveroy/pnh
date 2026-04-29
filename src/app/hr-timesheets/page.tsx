@@ -107,8 +107,8 @@ export default function HRTimesheetsPage() {
           }
         }
 
-        // AMK Filter
-        if (code && hrs > 0 && rowStr.includes('AMK')) {
+        // All Clinics — no location filter
+        if (code && hrs > 0) {
           records.push({ code, name, hrs });
         }
       }
