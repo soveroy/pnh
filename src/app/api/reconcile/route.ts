@@ -11,7 +11,7 @@ export interface GridRowData {
   originalHours: number;
   mappedHours: number;
   variance: number;
-  status: 'Pending' | 'Approved' | 'Review';
+  status: 'Pending' | 'Approved' | 'Review' | 'Auto-Reconciled (Lunch Adjusted)';
 }
 
 export async function POST(req: Request) {
@@ -277,23 +277,38 @@ export async function POST(req: Request) {
         const hoursToday = Math.min(shiftLength, remaining);
         remaining -= hoursToday;
 
+        // INTELLIGENT AUDITOR: Global Lunch Rule
+        // If duration > 5 hours, subtract 1.0 hour for unpaid lunch
+        let auditedHoursToday = hoursToday;
+        if (hoursToday > 5.0) {
+          auditedHoursToday -= 1.0;
+        }
+
         const inTime = new Date(2026, 2, day, baseStartHour, 0); 
         const outTime = new Date(inTime.getTime() + hoursToday * 60 * 60 * 1000);
 
         const formatTime = (d: Date) => d.toTimeString().substring(0, 5);
-        shifts[day] = { in: formatTime(inTime), out: formatTime(outTime), hrs: hoursToday };
+        shifts[day] = { 
+          in: formatTime(inTime), 
+          out: formatTime(outTime), 
+          hrs: auditedHoursToday // Use adjusted hours for mapping
+        };
       }
 
-      // Leftovers
+      // Leftovers (also apply lunch rule if needed)
       if (remaining > 0.001) {
         const lastDay = all_weekdays[all_weekdays.length - 1];
         if (shifts[lastDay]) {
           const { hrs } = shifts[lastDay];
-          const newHrs = hrs + remaining;
+          const newGrossHrs = (totalHours / all_weekdays.length) + remaining; // This is a fallback, but let's keep it simple
+          
+          let newAuditedHrs = newGrossHrs;
+          if (newGrossHrs > 5.0) newAuditedHrs -= 1.0;
+
           const inTime = new Date(2026, 2, lastDay, baseStartHour, 0);
-          const outTime = new Date(inTime.getTime() + newHrs * 60 * 60 * 1000);
+          const outTime = new Date(inTime.getTime() + newGrossHrs * 60 * 60 * 1000);
           const formatTime = (d: Date) => d.toTimeString().substring(0, 5);
-          shifts[lastDay] = { in: formatTime(inTime), out: formatTime(outTime), hrs: newHrs };
+          shifts[lastDay] = { in: formatTime(inTime), out: formatTime(outTime), hrs: newAuditedHrs };
           remaining = 0;
         }
       }
@@ -324,8 +339,24 @@ export async function POST(req: Request) {
       }
 
       totalMappedAll += sumMapped;
+      
+      // Calculate expected variance if lunch rules were applied
+      // If original was 9h and we mapped 8h, variance is 1h.
+      // If we expect 1h lunch per day, we check if the variance matches the lunch count.
       const variance = Math.abs(totalHours - sumMapped);
-      if (variance > 0.01) varianceCount++;
+      
+      let status: any = 'Review';
+      if (variance < 0.1) {
+        status = 'Approved';
+      } else {
+        // Check if the difference is explained by lunch breaks (approx 1h per day > 5h)
+        const daysWithLunch = Object.values(shifts).filter(s => (totalHours/all_weekdays.length) > 5.0).length;
+        if (Math.abs(variance - daysWithLunch) < 0.5) {
+          status = 'Auto-Reconciled (Lunch Adjusted)';
+        }
+      }
+
+      if (status === 'Review') varianceCount++;
 
       auditRows.push({
         id: empCode,
@@ -334,7 +365,7 @@ export async function POST(req: Request) {
         originalHours: totalHours,
         mappedHours: sumMapped,
         variance: variance,
-        status: variance > 0.01 ? 'Review' : 'Approved'
+        status: status
       });
     }
 
