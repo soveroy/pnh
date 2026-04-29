@@ -1,4 +1,5 @@
 import Link from 'next/link';
+export const runtime = 'edge';
 import { LayoutContainer } from '@/components/LayoutContainer';
 
 export default function HubDashboard() {
