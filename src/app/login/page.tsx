@@ -1,6 +1,8 @@
 import { login } from './actions'
 import { LayoutContainer } from '@/components/LayoutContainer'
 
+export const runtime = 'edge';
+
 export default async function LoginPage(props: {
   searchParams: Promise<{ message: string }>
 }) {
