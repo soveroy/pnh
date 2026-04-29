@@ -99,7 +99,11 @@ export async function POST(req: Request) {
       }
 
       totalHours = Math.round(totalHours * 100) / 100;
-      if (empCode && totalHours > 0) {
+      
+      // AMK FILTER: Only process employees from AMK clinic to stay within cloud limits
+      const isAMK = designation.includes('AMK');
+
+      if (empCode && totalHours > 0 && isAMK) {
         records.push({
           'Employee Code': empCode,
           'Employee Name': empName,
