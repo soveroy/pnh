@@ -89,9 +89,12 @@ export async function runReconciliationAction(csvFilePath: string, excelFilePath
       }
 
       totalHours = Math.round(totalHours * 100) / 100;
+      
+      // AMK FILTER: Scan entire row for "AMK" to be more robust
+      const rowString = row.join(' ').toUpperCase();
+      const isAMK = rowString.includes('AMK');
 
-      // AMK FILTER
-      if (empCode && totalHours > 0 && designation.includes('AMK')) {
+      if (empCode && totalHours > 0 && isAMK) {
         records.push({ code: empCode, hours: totalHours, name: empName, designation })
         csvEmpCodes.add(empCode.toUpperCase())
       }
@@ -180,7 +183,7 @@ export async function runReconciliationAction(csvFilePath: string, excelFilePath
       });
     }
 
-    const confidenceScore = auditRows.length === 0 ? 100 : Math.max(0, 100 - (auditRows.filter(r => r.status === 'Review').length / auditRows.length) * 100);
+    const confidenceScore = auditRows.length === 0 ? 0 : Math.max(0, 100 - (auditRows.filter(r => r.status === 'Review').length / auditRows.length) * 100);
 
     return { 
       success: true, 
