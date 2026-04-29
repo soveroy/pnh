@@ -166,7 +166,7 @@ export async function POST(req: Request) {
     const getWorkbook = (ws: any) => nhgpWorkbook;
 
     // --- DYNAMIC ANCHORING & NOISE FILTERING ---
-    const getEmployeeRows = (ws: ExcelJS.Worksheet) => {
+    const getEmployeeRows = (ws: any) => {
       const mapping: Record<string, number> = {};
       const noiseWords = ['TOTAL CLEANING TEAM', 'S/NO.', 'CLINIC'];
       
@@ -185,8 +185,12 @@ export async function POST(req: Request) {
         row.eachCell((cell) => {
           if (!foundCode) {
              const strVal = extractText(cell).trim().toUpperCase();
-             if (strVal && csvEmpCodes.has(strVal)) {
-               foundCode = strVal;
+             if (strVal) {
+               // FUZZY MATCH: Check if cell contains the code
+               const matchingCode = Array.from(csvEmpCodes).find(code => strVal.includes(code));
+               if (matchingCode) {
+                 foundCode = matchingCode;
+               }
              }
           }
         });
@@ -202,7 +206,7 @@ export async function POST(req: Request) {
     const rows2 = getEmployeeRows(ws2);
 
     // --- DYNAMIC COLUMN MAPPING ---
-    const getColumnMapping = (ws: ExcelJS.Worksheet, daysToFind: number[]) => {
+    const getColumnMapping = (ws: any, daysToFind: number[]) => {
       const colMap: Record<number, { inCol: number, outCol: number }> = {};
       
       // Scan top 6 rows
