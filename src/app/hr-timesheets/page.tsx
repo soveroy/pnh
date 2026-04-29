@@ -6,6 +6,7 @@ import { UploadArea } from '@/components/UploadArea';
 import { ActionBar } from '@/components/ActionBar';
 import { DataGrid, GridRowData } from '@/components/DataGrid';
 import { getSupabaseClient } from '@/utils/supabase';
+import { runReconciliationAction } from '@/actions/reconcile';
 
 export default function HRTimesheetsPage() {
   const [data, setData] = useState<GridRowData[]>([]);
@@ -38,21 +39,15 @@ export default function HRTimesheetsPage() {
     setIsProcessing(true);
     
     try {
-      const res = await fetch('/api/reconcile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csvFilePath: csvPath, excelFilePath: excelPath }),
-      });
+      const result = await runReconciliationAction(csvPath, excelPath);
       
-      const result = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(result.error || 'Server responded with an error');
+      if (!result.success) {
+        throw new Error(result.error || 'Server Action failed');
       }
 
-      setData(result.rows);
-      setConfidence(result.confidenceScore);
-      setDownloadPath(result.downloadPath);
+      setData(result.rows || []);
+      setConfidence(result.confidenceScore || 0);
+      setDownloadPath(result.downloadPath || '');
     } catch (error: any) {
       alert(`Error during reconciliation: ${error.message}`);
     } finally {
