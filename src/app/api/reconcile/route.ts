@@ -137,35 +137,34 @@ export async function POST(req: Request) {
       const mapping: Record<string, number> = {};
       const noiseWords = ['TOTAL CLEANING TEAM', 'S/NO.', 'CLINIC'];
       
-      ws.eachRow((row, rowNumber) => {
-        let isNoise = false;
-        row.eachCell((cell) => {
+      // OPTIMIZATION: Detect which column has the codes first
+      let codeCol = 2; // Default to Column B
+      for (let r = 1; r <= 10; r++) {
+        const row = ws.getRow(r);
+        row.eachCell((cell, colNum) => {
           const val = extractText(cell).toUpperCase();
-          if (noiseWords.some(nw => val.includes(nw))) {
-            isNoise = true;
+          if (val.includes('STAFF NAME') || val.includes('EMPLOYEE')) {
+            codeCol = colNum;
           }
         });
+      }
+
+      ws.eachRow((row, rowNumber) => {
+        if (rowNumber < 5) return; // Skip headers
+
+        const cell = row.getCell(codeCol);
+        const strVal = extractText(cell).trim().toUpperCase();
         
-        if (isNoise) return;
-
-        let foundCode: string | null = null;
-        row.eachCell((cell) => {
-          if (!foundCode) {
-             const strVal = extractText(cell).trim().toUpperCase();
-             if (strVal) {
-               // FUZZY MATCH: Check if cell contains the code
-               const matchingCode = Array.from(csvEmpCodes).find(code => strVal.includes(code));
-               if (matchingCode) {
-                 foundCode = matchingCode;
-               }
-             }
-          }
-        });
-
-        if (foundCode) {
-          // FIX: Only pick the FIRST match (data row) to avoid picking up footer/total rows
-          if (!mapping[foundCode]) {
-            mapping[foundCode] = rowNumber;
+        if (strVal) {
+          // FUZZY MATCH: Check if cell contains the code
+          // Use a faster loop or pre-check
+          for (const code of csvEmpCodes) {
+            if (strVal.includes(code)) {
+              if (!mapping[code]) {
+                mapping[code] = rowNumber;
+              }
+              break; 
+            }
           }
         }
       });
