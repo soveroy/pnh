@@ -1,6 +1,6 @@
-import { createClient } from '@/utils/supabase/server';
+import { NextResponse } from 'next/server';
+import { createClient as createStatelessClient } from '@supabase/supabase-js';
 import { Buffer } from 'node:buffer';
-import * as XLSX from 'xlsx';
 
 export const runtime = 'edge';
 
@@ -27,7 +27,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Zone 2 Excel template missing from request payload.' }, { status: 400 });
     }
 
-    const supabase = await createClient();
+    const supabase = createStatelessClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+    );
 
     // 1. Fetch files from Supabase raw_uploads bucket (PUBLIC URL BYPASS)
     console.log('Generating public URL for path:', csvFilePath);
@@ -51,6 +54,7 @@ export async function POST(req: Request) {
     (templateRes as any) = null; // Clear fetch response memory
 
     const ExcelJS = await import('exceljs');
+    const XLSX = await import('xlsx');
 
     // 2. Parse Raw Timesheet using ultra-lightweight XLSX
     const rawWorkbook = XLSX.read(rawArrayBuffer, { type: 'array' });
