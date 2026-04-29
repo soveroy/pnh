@@ -38,6 +38,7 @@ export async function POST(req: Request) {
     if (!rawRes.ok) throw new Error(`Fetch failed for Zone 1 (Public URL): ${rawRes.status} ${rawRes.statusText}. Please ensure bucket is public.`);
     const rawArrayBuffer = await rawRes.arrayBuffer();
     const rawBuffer = Buffer.from(rawArrayBuffer);
+    (rawRes as any) = null; // Clear fetch response memory
 
     console.log('Generating public URL for path:', excelFilePath);
     const { data: templatePublic } = supabase.storage.from('raw_uploads').getPublicUrl(excelFilePath);
@@ -47,6 +48,7 @@ export async function POST(req: Request) {
     if (!templateRes.ok) throw new Error(`Fetch failed for Zone 2 (Public URL): ${templateRes.status} ${templateRes.statusText}. Please ensure bucket is public.`);
     const templateArrayBuffer = await templateRes.arrayBuffer();
     const excelBuffer = Buffer.from(templateArrayBuffer as any);
+    (templateRes as any) = null; // Clear fetch response memory
 
     const ExcelJS = await import('exceljs');
 
@@ -81,8 +83,8 @@ export async function POST(req: Request) {
       if (rowNum < 7 || rowNum > 9) return;
 
       const rowData: string[] = [];
-      row.eachCell((cell) => rowData.push(extractText(cell)));
-      console.log(`Row ${rowNum} Contents (Flattened):`, rowData);
+      // row.eachCell((cell) => rowData.push(extractText(cell)));
+      // console.log(`Row ${rowNum} Contents (Flattened):`, rowData);
 
       // We try to dynamically update columns if it's the exact header row
       if (rowNum === 7) {
@@ -146,6 +148,10 @@ export async function POST(req: Request) {
       }
     });
 
+    // Clear Raw Workbook memory immediately after extracting records
+    (rawWorkbook as any).worksheets = [];
+    (rawWs as any) = null;
+    
     // Build Set of valid Employee Codes from raw timesheet
     const csvEmpCodes = new Set<string>();
     records.forEach(r => {
