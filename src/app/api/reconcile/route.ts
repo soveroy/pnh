@@ -44,11 +44,11 @@ export async function POST(req: Request) {
     const templateRes = await fetch(templatePublic.publicUrl);
     if (!templateRes.ok) throw new Error(`Fetch failed for Zone 2 (Public URL): ${templateRes.status} ${templateRes.statusText}. Please ensure bucket is public.`);
     const templateArrayBuffer = await templateRes.arrayBuffer();
-    const excelBuffer = Buffer.from(templateArrayBuffer);
+    const excelBuffer = Buffer.from(templateArrayBuffer as any);
 
     // 2. Parse Raw Timesheet (.xlsx) instead of CSV
     const rawWorkbook = new ExcelJS.Workbook();
-    await rawWorkbook.xlsx.load(rawBuffer);
+    await rawWorkbook.xlsx.load(rawBuffer as any);
     const rawWs = rawWorkbook.worksheets[0];
     if (!rawWs) throw new Error('Raw timesheet is empty.');
 
