@@ -196,7 +196,10 @@ export async function POST(req: Request) {
         });
 
         if (foundCode) {
-          mapping[foundCode] = rowNumber;
+          // FIX: Only pick the FIRST match (data row) to avoid picking up footer/total rows
+          if (!mapping[foundCode]) {
+            mapping[foundCode] = rowNumber;
+          }
         }
       });
       return mapping;
