@@ -52,6 +52,8 @@ export function DataGrid({ data, confidenceScore }: DataGridProps) {
                 className={`transition-colors ${
                   row.status === 'Review' 
                     ? 'bg-red-900/20 hover:bg-red-900/30' 
+                    : row.status === 'Auto-Reconciled (Lunch Adjusted)'
+                    ? 'bg-yellow-900/10 hover:bg-yellow-900/20'
                     : 'hover:bg-neutral-800/50'
                 }`}
               >
@@ -70,8 +72,12 @@ export function DataGrid({ data, confidenceScore }: DataGridProps) {
                 </td>
                 <td className="px-4 py-2">
                   <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${
-                    row.status === 'Approved' || row.status === 'Auto-Reconciled (Lunch Adjusted)' ? 'bg-green-900/20 text-green-400 border-green-800/30' :
-                    row.status === 'Review' ? 'bg-red-900/20 text-red-400 border-red-800/30' :
+                    row.status === 'Approved' 
+                      ? 'bg-green-900/20 text-green-400 border-green-800/30' :
+                    row.status === 'Auto-Reconciled (Lunch Adjusted)' 
+                      ? 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50' :
+                    row.status === 'Review' 
+                      ? 'bg-red-900/20 text-red-400 border-red-800/30' :
                     'bg-neutral-800 text-neutral-400 border-neutral-700'
                   }`}>
                     {row.status}
