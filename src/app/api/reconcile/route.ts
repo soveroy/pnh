@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { Buffer } from 'node:buffer';
+import * as XLSX from 'xlsx';
 
 export const runtime = 'edge';
 
@@ -52,105 +52,66 @@ export async function POST(req: Request) {
 
     const ExcelJS = await import('exceljs');
 
-    // 2. Parse Raw Timesheet (.xlsx) instead of CSV
-    const rawWorkbook = new ExcelJS.Workbook();
-    await rawWorkbook.xlsx.load(rawBuffer as any);
-    const rawWs = rawWorkbook.worksheets[0];
+    // 2. Parse Raw Timesheet using ultra-lightweight XLSX
+    const rawWorkbook = XLSX.read(rawArrayBuffer, { type: 'array' });
+    const rawWs = rawWorkbook.Sheets[rawWorkbook.SheetNames[0]];
     if (!rawWs) throw new Error('Raw timesheet is empty.');
 
-    let headerRowIdx = 7; // Force treat Row 7 as header row
-    let empCodeCol = 1;   // Default Column A
-    let empNameCol = 2;   // Default Column B
-    let designationCol = 7; // Default Column G
-    let hoursCol = 9;     // Default Column I
-
-    console.log('--- SCANNING RAW TIMESHEET HEADERS ---');
+    const rawData = XLSX.utils.sheet_to_json(rawWs, { header: 1 }) as any[][];
     
-    // 1. Cell Value Flattening Helper
-    const extractText = (cell: ExcelJS.Cell): string => {
-      if (!cell || !cell.value) return '';
-      if (typeof cell.value === 'object') {
-        if ('richText' in cell.value && Array.isArray(cell.value.richText)) {
-          return cell.value.richText.map((rt: any) => rt.text).join('');
-        }
-        if ('result' in cell.value) return String(cell.value.result);
-      }
-      return cell.text ? String(cell.text) : String(cell.value);
-    };
+    let headerRowIdx = 6; // Index 6 is Row 7
+    let empCodeCol = 0;   
+    let empNameCol = 1;   
+    let designationCol = 6; 
+    let hoursCol = 8;     
 
-    rawWs.eachRow((row, rowNum) => {
-      // Look around Row 7 just to verify or overwrite defaults
-      if (rowNum < 7 || rowNum > 9) return;
-
-      const rowData: string[] = [];
-      // row.eachCell((cell) => rowData.push(extractText(cell)));
-      // console.log(`Row ${rowNum} Contents (Flattened):`, rowData);
-
-      // We try to dynamically update columns if it's the exact header row
-      if (rowNum === 7) {
-        row.eachCell((cell, colNum) => {
-          let val = extractText(cell).toUpperCase();
-          val = val.replace(/[\n\r]/g, ' '); 
-          val = val.replace(/[^A-Z0-9\s]/g, ''); 
-          val = val.replace(/\s+/g, ' ').trim(); 
-          
-          if (val.includes('EMPLOYEE') && val.includes('NO')) empCodeCol = colNum;
-          if (val.includes('EMPLOYEE') && val.includes('NAME')) empNameCol = colNum;
-          if (val.includes('DESIGNATION')) designationCol = colNum;
-          if (val.includes('TOTAL') && val.includes('HOURS')) hoursCol = colNum;
-        });
-      }
-    });
-
-    console.log(`Using columns - EmpCode: ${empCodeCol}, Name: ${empNameCol}, Desig: ${designationCol}, Hours: ${hoursCol}`);
+    console.log('--- SCANNING RAW HEADERS WITH XLSX ---');
+    const headerRow = rawData[headerRowIdx];
+    if (headerRow) {
+      headerRow.forEach((val, colNum) => {
+        let str = String(val || '').toUpperCase().trim();
+        if (str.includes('EMPLOYEE') && str.includes('NO')) empCodeCol = colNum;
+        if (str.includes('EMPLOYEE') && str.includes('NAME')) empNameCol = colNum;
+        if (str.includes('DESIGNATION')) designationCol = colNum;
+        if (str.includes('TOTAL') && str.includes('HOURS')) hoursCol = colNum;
+      });
+    }
 
     const records: any[] = [];
-    rawWs.eachRow((row, rowNum) => {
-      if (rowNum <= headerRowIdx) return;
+    for (let i = headerRowIdx + 1; i < rawData.length; i++) {
+      const row = rawData[i];
+      const empCode = String(row[empCodeCol] || '').trim();
+      const empName = String(row[empNameCol] || '').trim();
+      const designation = String(row[designationCol] || '').trim().toUpperCase();
+      let rawHours = row[hoursCol];
       
-      const getVal = (col: number) => {
-        if (col === -1) return '';
-        const cell = row.getCell(col);
-        return extractText(cell);
-      };
-
-      // Extract and aggressively trim to ensure perfect matches (e.g., 'G00027 ')
-      const rawCode = getVal(empCodeCol);
-      const empCode = rawCode ? String(rawCode).trim() : '';
-      
-      const empName = getVal(empNameCol);
-      const designation = getVal(designationCol).toUpperCase();
-      
-      let rawHoursStr = String(getVal(hoursCol)).trim();
       let totalHours = 0;
-      
-      // Handle Excel Time Strings (e.g. "90:30")
-      if (rawHoursStr.includes(':')) {
-        const parts = rawHoursStr.split(':');
-        totalHours = parseFloat(parts[0]) + (parseFloat(parts[1] || '0') / 60);
+      if (typeof rawHours === 'number') {
+        totalHours = rawHours;
       } else {
-        // Handle standard numbers, strip commas, handle percentages
-        let cleanStr = rawHoursStr.replace(/,/g, '').replace(/[^0-9.-]/g, '');
-        totalHours = parseFloat(cleanStr);
-        if (rawHoursStr.includes('%')) totalHours = totalHours * 100; // Just in case it's a raw percentage
+        let str = String(rawHours || '').trim();
+        if (str.includes(':')) {
+          const p = str.split(':');
+          totalHours = parseFloat(p[0]) + (parseFloat(p[1] || '0') / 60);
+        } else {
+          totalHours = parseFloat(str.replace(/,/g, '')) || 0;
+        }
       }
 
-      // Round to 2 decimal places to prevent weird floating point shifts
       totalHours = Math.round(totalHours * 100) / 100;
-
-      if (empCode && !isNaN(totalHours) && totalHours > 0) {
+      if (empCode && totalHours > 0) {
         records.push({
           'Employee Code': empCode,
-          'Employee Name': String(empName).trim(),
-          'Designation': String(designation).trim(),
+          'Employee Name': empName,
+          'Designation': designation,
           'Total Working Hours': totalHours
         });
       }
-    });
+    }
 
-    // Clear Raw Workbook memory immediately after extracting records
-    (rawWorkbook as any).worksheets = [];
-    (rawWs as any) = null;
+    // Clear Raw data from memory
+    (rawWorkbook as any) = null;
+    (rawData as any) = null;
     
     // Build Set of valid Employee Codes from raw timesheet
     const csvEmpCodes = new Set<string>();
