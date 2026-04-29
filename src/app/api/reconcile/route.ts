@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import * as ExcelJS from 'exceljs';
+import { Buffer } from 'node:buffer';
 
 export const runtime = 'edge';
 
@@ -47,6 +47,8 @@ export async function POST(req: Request) {
     if (!templateRes.ok) throw new Error(`Fetch failed for Zone 2 (Public URL): ${templateRes.status} ${templateRes.statusText}. Please ensure bucket is public.`);
     const templateArrayBuffer = await templateRes.arrayBuffer();
     const excelBuffer = Buffer.from(templateArrayBuffer as any);
+
+    const ExcelJS = await import('exceljs');
 
     // 2. Parse Raw Timesheet (.xlsx) instead of CSV
     const rawWorkbook = new ExcelJS.Workbook();
@@ -153,12 +155,15 @@ export async function POST(req: Request) {
     });
 
     // 3. Load Excel Template
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(excelBuffer);
+    const nhgpWorkbook = new (await import('exceljs')).Workbook();
+    await nhgpWorkbook.xlsx.load(excelBuffer as any);
     
-    const ws1 = workbook.getWorksheet('Staff Attendance-1st Half');
-    const ws2 = workbook.getWorksheet('Staff Attendance-2nd Half');
+    const ws1 = nhgpWorkbook.getWorksheet('Staff Attendance-1st Half');
+    const ws2 = nhgpWorkbook.getWorksheet('Staff Attendance-2nd Half');
     if (!ws1 || !ws2) throw new Error('Missing required sheets in the Excel template.');
+
+    // Helper to get Workbook from any worksheet
+    const getWorkbook = (ws: any) => nhgpWorkbook;
 
     // --- DYNAMIC ANCHORING & NOISE FILTERING ---
     const getEmployeeRows = (ws: ExcelJS.Worksheet) => {
@@ -330,7 +335,7 @@ export async function POST(req: Request) {
     }
 
     // 4. Generate Output Buffer
-    const outputBuffer = await workbook.xlsx.writeBuffer();
+    const outputBuffer = await nhgpWorkbook.xlsx.writeBuffer();
 
     // 5. Save to processed_exports
     const exportFileName = `Demo_Ready_Submission_${Date.now()}.xlsx`;

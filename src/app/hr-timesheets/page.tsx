@@ -5,7 +5,7 @@ import { LayoutContainer } from '@/components/LayoutContainer';
 import { UploadArea } from '@/components/UploadArea';
 import { ActionBar } from '@/components/ActionBar';
 import { DataGrid, GridRowData } from '@/components/DataGrid';
-import { supabase } from '@/utils/supabase';
+import { getSupabaseClient } from '@/utils/supabase';
 
 export default function HRTimesheetsPage() {
   const [data, setData] = useState<GridRowData[]>([]);
@@ -62,6 +62,7 @@ export default function HRTimesheetsPage() {
 
   const handleExport = async () => {
     if (!downloadPath) return;
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase.storage.from('processed_exports').createSignedUrl(downloadPath, 60);
     if (error || !data) {
       alert('Error creating download link');
