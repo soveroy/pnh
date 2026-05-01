@@ -27,15 +27,22 @@ export default function HubDashboard() {
               </div>
             </Link>
             
-            {/* Future Tool Placeholder */}
-            <div className="p-6 rounded-lg border border-neutral-800 border-dashed bg-neutral-900/20 h-full flex flex-col justify-center items-center opacity-50">
-               <div className="w-10 h-10 rounded-full border border-neutral-700 flex items-center justify-center mb-4">
-                  <svg className="w-4 h-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            <Link href="/attendance-converter" className="group block">
+              <div className="p-6 rounded-lg border border-neutral-800 bg-neutral-900/50 hover:bg-neutral-800/80 hover:border-neutral-700 transition-all cursor-pointer h-full flex flex-col">
+                <div className="w-10 h-10 rounded-md bg-neutral-800 flex items-center justify-center mb-4 group-hover:bg-neutral-700 transition-colors">
+                  <svg className="w-5 h-5 text-neutral-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                   </svg>
                 </div>
-                <h3 className="text-sm font-medium text-neutral-400">New Tool Coming Soon</h3>
-            </div>
+                <h3 className="text-base font-medium text-neutral-200 mb-2">Attendance Format Converter</h3>
+                <p className="text-sm text-neutral-400 flex-1">
+                  Transform PNH Group attendance data into the NHGP submission timesheet format for manpower claims.
+                </p>
+                <div className="mt-6 flex items-center text-xs font-medium text-neutral-500 uppercase tracking-wider">
+                  Launch Tool &rarr;
+                </div>
+              </div>
+            </Link>
 
           </div>
         </section>
