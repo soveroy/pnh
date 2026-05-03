@@ -90,12 +90,19 @@ export default function AttendanceConverterPage() {
   const makeDragHandlers = (slot: 'source' | 'template') => ({
     onDragOver: (e: React.DragEvent) => {
       e.preventDefault()
-      if (slot === 'source' && source.state !== 'ready')
+      e.stopPropagation()
+      if (slot === 'source' && source.state === 'idle')
         setSource(s => ({ ...s, state: 'dragging' }))
-      if (slot === 'template' && template.state !== 'ready')
+      if (slot === 'template' && template.state === 'idle')
         setTemplate(t => ({ ...t, state: 'dragging' }))
     },
-    onDragLeave: () => {
+    onDragEnter: (e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
       if (slot === 'source' && source.state === 'dragging')
         setSource(s => ({ ...s, state: 'idle' }))
       if (slot === 'template' && template.state === 'dragging')
@@ -103,8 +110,13 @@ export default function AttendanceConverterPage() {
     },
     onDrop: (e: React.DragEvent) => {
       e.preventDefault()
+      e.stopPropagation()
       const file = e.dataTransfer.files[0]
       if (file) handleFileAccepted(file, slot)
+      else {
+        if (slot === 'source') setSource(s => ({ ...s, state: 'idle' }))
+        else setTemplate(t => ({ ...t, state: 'idle' }))
+      }
     },
     onClick: () => {
       if (slot === 'source' && source.state !== 'ready') sourceInputRef.current?.click()
