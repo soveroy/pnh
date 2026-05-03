@@ -8,6 +8,7 @@ export interface GridRowData {
   mappedHours: number;
   variance: number;
   status: 'Pending' | 'Approved' | 'Review' | 'Auto-Reconciled (Lunch Adjusted)';
+  aiReason?: string;
 }
 
 interface DataGridProps {
@@ -82,6 +83,20 @@ export function DataGrid({ data, confidenceScore }: DataGridProps) {
                   }`}>
                     {row.status}
                   </span>
+                  {row.aiReason && (
+                    <div className="group relative inline-block ml-2">
+                      <svg className="w-3.5 h-3.5 text-neutral-500 cursor-help hover:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1">AI Auditor Insight</p>
+                        <p className="text-[11px] text-neutral-300 whitespace-normal leading-relaxed">
+                          {row.aiReason}
+                        </p>
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-neutral-800"></div>
+                      </div>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}

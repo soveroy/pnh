@@ -34,6 +34,27 @@ export interface ConversionResult {
   outputBase64?: string // Base64-encoded xlsx buffer
   errors?: string[]
   error?: string
+  insights?: {
+    unknownLeaveCodes: string[]
+    missingOutTimes: string[]
+    duplicateEntries: string[]
+    score: number
+    summary: string
+  }
+}
+
+export interface ValidationResult {
+  success: boolean
+  checks: {
+    label: string
+    status: 'pass' | 'warn' | 'fail'
+    detail: string
+  }[]
+  meta?: {
+    employeeCount: number
+    dateRange: string
+    sheetCount: number
+  }
 }
 
 // ── Attendance Code Mapping ───────────────────────────────────────────────────
@@ -387,9 +408,19 @@ export async function convertAttendanceAction(
       }
     }
 
-    // ── Export to base64 ─────────────────────────────────────────────────────
-    const outputBuf = XLSX.write(tplWb, { type: 'buffer', bookType: 'xlsx' })
-    const outputBase64 = Buffer.from(outputBuf).toString('base64')
+    // ── Generate AI Insights ────────────────────────────────────────────────
+    const unknownCodes = Array.from(new Set(errors.filter(e => e.includes('unknown code')).map(e => e.split('"')[1] || '')))
+    const missingOuts = Array.from(new Set(errors.filter(e => e.includes('missing OUT')).map(e => e.split('for ')[1] || '')))
+    
+    // Simple Score Calculation
+    let score = 100
+    if (unknownCodes.length > 0) score -= 5
+    if (missingOuts.length > 0) score -= 10
+    if (attendanceRecords.length === 0) score = 0
+
+    const summary = `Successfully converted ${attendanceRecords.length} employees. ` +
+      (unknownCodes.length > 0 ? `Found ${unknownCodes.length} unknown leave codes. ` : '') +
+      (missingOuts.length > 0 ? `Warning: ${missingOuts.length} records missing clock-out times.` : 'All clock-out times matched.')
 
     return {
       success: true,
@@ -397,10 +428,63 @@ export async function convertAttendanceAction(
       dayCount: totalDayCount,
       outputBase64,
       errors: errors.length > 0 ? errors : undefined,
+      insights: {
+        unknownLeaveCodes: unknownCodes,
+        missingOutTimes: missingOuts,
+        duplicateEntries: [], // TBD
+        score,
+        summary
+      }
     }
 
   } catch (err: any) {
     console.error('convertAttendanceAction error:', err)
     return { success: false, error: err.message || 'Unknown error during conversion.' }
+  }
+}
+
+export async function validateSourceAction(sourceBase64: string): Promise<ValidationResult> {
+  try {
+    const buf = Buffer.from(sourceBase64, 'base64')
+    const wb = XLSX.read(buf, { type: 'buffer', cellDates: true })
+    const checks: ValidationResult['checks'] = []
+
+    // 1. Sheet presence
+    const sheet1 = wb.SheetNames.find(s => s.includes('1st'))
+    const sheet2 = wb.SheetNames.find(s => s.includes('2nd'))
+    
+    if (sheet1 && sheet2) {
+      checks.push({ label: 'Sheet Structure', status: 'pass', detail: 'Found both 1st and 2nd Half sheets.' })
+    } else {
+      checks.push({ label: 'Sheet Structure', status: 'fail', detail: 'Missing required 1st or 2nd Half sheets.' })
+    }
+
+    // 2. Emp List
+    const empList = wb.SheetNames.find(s => s.toLowerCase().includes('emp'))
+    if (empList) {
+      checks.push({ label: 'Employee Registry', status: 'pass', detail: 'EMP LIST sheet detected for mapping.' })
+    } else {
+      checks.push({ label: 'Employee Registry', status: 'warn', detail: 'No EMP LIST found. Using names from attendance rows.' })
+    }
+
+    // 3. Data Scan
+    let empCount = 0
+    if (sheet1) {
+      const ws = wb.Sheets[sheet1]
+      const data = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 })
+      empCount = data.length > 5 ? data.length - 5 : 0 // Rough estimate
+    }
+
+    return {
+      success: true,
+      checks,
+      meta: {
+        employeeCount: empCount,
+        dateRange: 'Detected from sheets',
+        sheetCount: wb.SheetNames.length
+      }
+    }
+  } catch (e: any) {
+    return { success: false, checks: [{ label: 'File Parse', status: 'fail', detail: e.message }] }
   }
 }

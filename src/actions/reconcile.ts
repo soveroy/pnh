@@ -11,9 +11,24 @@ export interface GridRowData {
   mappedHours: number;
   variance: number;
   status: 'Pending' | 'Approved' | 'Review' | 'Auto-Reconciled (Lunch Adjusted)';
+  aiReason?: string;
 }
 
-export async function runReconciliationAction(csvFilePath: string, excelFilePath: string) {
+export interface ReconcileResult {
+  success: boolean
+  rows?: GridRowData[]
+  confidenceScore: number
+  downloadPath?: string | null
+  error?: string
+  insights?: {
+    totalAdjusted: number
+    highestVarianceName: string
+    highestVarianceValue: number
+    summary: string
+  }
+}
+
+export async function runReconciliationAction(csvFilePath: string, excelFilePath: string): Promise<ReconcileResult> {
   try {
     console.log('--- STARTING SUPER-SPEED RECONCILIATION ---');
     const supabase = createStatelessClient(
@@ -87,20 +102,79 @@ export async function runReconciliationAction(csvFilePath: string, excelFilePath
         originalHours: hrs,
         mappedHours: auditedTotal,
         variance: variance,
-        status: variance > 0.1 ? 'Auto-Reconciled (Lunch Adjusted)' : 'Approved'
+        status: variance > 0.1 ? 'Auto-Reconciled (Lunch Adjusted)' : 'Approved',
+        aiReason: variance > 0.1 
+          ? `Lunch adjustment applied. Employee averaged ${(hrs/weekdays_count).toFixed(1)} hrs/shift over ${weekdays_count} days. Since average > 5.0h, a 1.0h deduction per day was applied.`
+          : 'Hours match expected patterns. No adjustment required.'
       });
     }
+
+    // Generate Insights
+    const adjustedCount = auditRows.filter(r => r.variance > 0.1).length;
+    const sortedByVariance = [...auditRows].sort((a, b) => b.variance - a.variance);
+    const highest = sortedByVariance[0];
+
+    const insights = {
+      totalAdjusted: adjustedCount,
+      highestVarianceName: highest?.name || 'N/A',
+      highestVarianceValue: highest?.variance || 0,
+      summary: `Processed ${auditRows.length} employees. ${adjustedCount} records required lunch-break adjustments. Highest variance detected for ${highest?.name || 'N/A'}.`
+    };
 
     console.log('--- RECONCILIATION COMPLETE ---');
     return { 
       success: true, 
       rows: auditRows, 
-      confidenceScore: auditRows.length > 0 ? 100 : 0,
-      downloadPath: null 
+      confidenceScore: auditRows.length > 0 ? Math.max(0, 100 - (adjustedCount / auditRows.length * 50)) : 0,
+      downloadPath: null,
+      insights
     };
 
   } catch (error: any) {
     console.error('Super-speed error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, confidenceScore: 0 };
+  }
+}
+
+export async function validateTimesheetAction(filePath: string): Promise<{ success: boolean, checks: { label: string, status: 'pass' | 'warn' | 'fail', detail: string }[] }> {
+  try {
+    const supabase = createStatelessClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+    )
+    const { data: publicUrl } = supabase.storage.from('raw_uploads').getPublicUrl(filePath)
+    const res = await fetch(publicUrl.publicUrl!)
+    const buf = await res.arrayBuffer()
+    const wb = XLSX.read(buf, { type: 'array' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][]
+
+    const checks: { label: string, status: 'pass' | 'warn' | 'fail', detail: string }[] = []
+
+    // 1. Header Detection
+    let foundHeader = false
+    for (let r = 0; r < Math.min(15, data.length); r++) {
+      if (data[r].join('|').toUpperCase().includes('EMPLOYEE NO')) {
+        foundHeader = true
+        break
+      }
+    }
+    checks.push({
+      label: 'Header Detection',
+      status: foundHeader ? 'pass' : 'fail',
+      detail: foundHeader ? 'Found "Employee No" header row.' : 'Could not locate standard header row.'
+    })
+
+    // 2. Data Volume
+    const records = data.length - 7
+    checks.push({
+      label: 'Data Volume',
+      status: records > 0 ? 'pass' : 'warn',
+      detail: records > 0 ? `Detected ${records} potential employee records.` : 'File appears to be empty or malformed.'
+    })
+
+    return { success: true, checks }
+  } catch (e: any) {
+    return { success: false, checks: [{ label: 'File Parse', status: 'fail', detail: e.message }] }
   }
 }

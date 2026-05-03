@@ -2,7 +2,8 @@
 
 import { useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { convertAttendanceAction } from '@/actions/convertAttendance'
+import { convertAttendanceAction, validateSourceAction, ValidationResult } from '@/actions/convertAttendance'
+import { AiInsightPanel } from '@/components/AiInsightPanel'
 
 type UploadState = 'idle' | 'dragging' | 'ready'
 type StepStatus = 'pending' | 'running' | 'done' | 'error'
@@ -34,6 +35,16 @@ export default function AttendanceConverterPage() {
   const [stats, setStats] = useState<{ employees: number; days: number } | null>(null)
   const [errors, setErrors] = useState<string[]>([])
   const [globalError, setGlobalError] = useState<string | null>(null)
+  
+  // AI Intelligence States
+  const [validation, setValidation] = useState<ValidationResult | null>(null)
+  const [insights, setInsights] = useState<{
+    unknownLeaveCodes: string[]
+    missingOutTimes: string[]
+    score: number
+    summary: string
+  } | null>(null)
+  const [isValidating, setIsValidating] = useState(false)
 
   const sourceInputRef = useRef<HTMLInputElement>(null)
   const templateInputRef = useRef<HTMLInputElement>(null)
@@ -61,8 +72,16 @@ export default function AttendanceConverterPage() {
       }
       setGlobalError(null)
       const b64 = await readFileAsBase64(file)
-      if (slot === 'source') setSource({ state: 'ready', file, base64: b64 })
-      else setTemplate({ state: 'ready', file, base64: b64 })
+      if (slot === 'source') {
+        setSource({ state: 'ready', file, base64: b64 })
+        // Run AI Pre-flight validation
+        setIsValidating(true)
+        const res = await validateSourceAction(b64)
+        setValidation(res)
+        setIsValidating(false)
+      } else {
+        setTemplate({ state: 'ready', file, base64: b64 })
+      }
     },
     []
   )
@@ -137,13 +156,11 @@ export default function AttendanceConverterPage() {
 
     updateStep(1, { status: 'done', detail: `${result.employeeCount} employees · ${result.dayCount} day records` })
 
-    // Step 3
-    updateStep(2, { status: 'running' })
-    await new Promise(r => setTimeout(r, 250))
     updateStep(2, { status: 'done' })
 
     setOutputBase64(result.outputBase64!)
     setStats({ employees: result.employeeCount!, days: result.dayCount! })
+    if (result.insights) setInsights(result.insights)
     if (result.errors?.length) setErrors(result.errors)
     setIsConverting(false)
   }
@@ -340,6 +357,22 @@ export default function AttendanceConverterPage() {
                 <p className="text-xs text-red-300">{globalError}</p>
               </div>
             )}
+            
+            {/* AI Pre-Flight Panel */}
+            {isValidating && (
+              <div className="h-20 flex flex-col items-center justify-center border border-neutral-800 rounded-xl bg-neutral-900/40 animate-pulse">
+                <p className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold">AI Scanning Source File...</p>
+              </div>
+            )}
+            
+            {validation && !isValidating && (
+              <AiInsightPanel 
+                type="pre-flight"
+                title="AI Pre-Flight Health Report"
+                summary={validation.success ? `Scan complete. Found ${validation.meta?.employeeCount || 0} employees across ${validation.meta?.sheetCount || 0} sheets.` : 'Pre-flight scan failed.'}
+                checks={validation.checks}
+              />
+            )}
           </div>
 
           {/* ── Progress panel ───────────────────────────────────────────────── */}
@@ -424,11 +457,20 @@ export default function AttendanceConverterPage() {
               )}
 
               {errors.length > 0 && (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 max-h-32 overflow-y-auto p-2 bg-black/20 rounded border border-neutral-800">
                   {errors.map((e, i) => (
                     <p key={i} className="text-[10px] text-yellow-400">⚠ {e}</p>
                   ))}
                 </div>
+              )}
+
+              {insights && (
+                <AiInsightPanel 
+                  type="post-run"
+                  title="AI Conversion Summary"
+                  summary={insights.summary}
+                  score={insights.score}
+                />
               )}
 
               <button
