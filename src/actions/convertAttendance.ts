@@ -99,7 +99,14 @@ function calcHours(inTime: string | null, outTime: string | null): number {
   const [oh, om] = outTime.split(':').map(Number)
   let mins = (oh * 60 + om) - (ih * 60 + im)
   if (mins < 0) mins += 24 * 60 // overnight shift
-  return Math.round((mins / 60) * 100) / 100
+  
+  let hours = mins / 60
+  // Intelligence: HR Manual Rule - Deduct 1 hour for lunch if shift > 5 hours
+  if (hours > 5.0) {
+    hours -= 1.0
+  }
+  
+  return Math.round(hours * 100) / 100
 }
 
 function excelDateToJSDate(val: unknown): Date | null {
@@ -154,12 +161,12 @@ export async function convertAttendanceAction(
         const code = String(row[0] || '').trim()
         if (!code) continue
         empMap.set(code.toUpperCase(), {
-          code,
+          code: code.toUpperCase(),
           name: String(row[1] || '').trim(),
-          workingGroup: String(row[3] || '').trim(),
-          designation: String(row[4] || '').trim(),
-          epc: 'GM-OPT',
-          sbu: 'OPERATION2',
+          epc: String(row[2] || 'GM-OPT').trim(),
+          workingGroup: String(row[3] || 'VITA-KALLANG WAY').trim(),
+          sbu: String(row[4] || 'OPERATION2').trim(),
+          designation: String(row[5] || '').trim(),
         })
       }
     }
@@ -215,8 +222,16 @@ export async function convertAttendanceAction(
 
       for (let r = empStartRow; r < raw.length; r++) {
         const row = raw[r]
-        const empCode = String(row[2] || '').trim().toUpperCase()
-        if (!empCode) continue
+        let empCode = String(row[2] || '').trim().toUpperCase()
+        const empName = String(row[3] || '').trim()
+
+        if (!empCode || empCode === 'NULL') {
+          // Intelligence: Fallback to name search if code is missing in attendance sheet
+          const match = Array.from(empMap.values()).find(e => e.name.toUpperCase() === empName.toUpperCase())
+          if (match) empCode = match.code
+        }
+
+        if (!empCode || empCode === 'NULL') continue
 
         // Collect day records
         const days: DayRecord[] = []
