@@ -449,19 +449,8 @@ export default function AttendanceConverterPage() {
             <div className="rounded-2xl border border-emerald-800/40 bg-emerald-900/10 p-5 flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <p className="text-[11px] font-semibold text-emerald-500 uppercase tracking-widest">Step 3 — Download</p>
 
-              <button
-                id="btn-download"
-                onClick={handleDownload}
-                className="w-full px-4 py-3 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-all duration-150 flex items-center justify-center gap-2 mb-2"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download Converted File (.xlsx)
-              </button>
-
               {stats && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 border-y border-emerald-800/10">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 border-y border-emerald-800/10 mb-2">
                   <div className="p-3 rounded-xl bg-black/20 border border-neutral-800/50">
                     <p className="text-2xl font-bold text-neutral-100 font-mono">{stats.employees}</p>
                     <p className="text-[10px] text-neutral-500 uppercase tracking-widest mt-1">Headcount</p>
@@ -480,6 +469,17 @@ export default function AttendanceConverterPage() {
                   </div>
                 </div>
               )}
+
+              <button
+                id="btn-download"
+                onClick={handleDownload}
+                className="w-full px-4 py-3 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-all duration-150 flex items-center justify-center gap-2 mb-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download Converted File (.xlsx)
+              </button>
 
               {errors.length > 0 && (
                 <div className="flex flex-col gap-1 max-h-32 overflow-y-auto p-2 bg-black/20 rounded border border-neutral-800">
