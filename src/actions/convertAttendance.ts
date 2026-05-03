@@ -427,6 +427,28 @@ export async function convertAttendanceAction(
     const unknownCodes = Array.from(new Set(errors.filter(e => e.includes('unknown code')).map(e => e.split('"')[1] || '')))
     const missingOuts = Array.from(new Set(errors.filter(e => e.includes('missing OUT')).map(e => e.split('for ')[1] || '')))
     
+    let totalHours = 0
+    let totalLeaveDays = 0
+    let adjustmentCount = 0
+
+    attendanceRecords.forEach(rec => {
+      rec.days.forEach(d => {
+        if (!d.isOff) {
+          if (d.leaveCode) totalLeaveDays++
+          else {
+            totalHours += d.hoursWorked
+            if (d.inTime && d.outTime) {
+                const [ih, im] = d.inTime.split(':').map(Number)
+                const [oh, om] = d.outTime.split(':').map(Number)
+                let rawMins = (oh * 60 + om) - (ih * 60 + im)
+                if (rawMins < 0) rawMins += 24 * 60
+                if (rawMins / 60 > 5.0) adjustmentCount++
+            }
+          }
+        }
+      })
+    })
+
     // Simple Score Calculation
     let score = 100
     if (unknownCodes.length > 0) score -= 5
@@ -434,8 +456,8 @@ export async function convertAttendanceAction(
     if (attendanceRecords.length === 0) score = 0
 
     const summary = `Successfully converted ${attendanceRecords.length} employees. ` +
-      (unknownCodes.length > 0 ? `Found ${unknownCodes.length} unknown leave codes. ` : '') +
-      (missingOuts.length > 0 ? `Warning: ${missingOuts.length} records missing clock-out times.` : 'All clock-out times matched.')
+      `Processed ${totalHours.toFixed(1)} total man-hours with ${totalLeaveDays} leave days. ` +
+      (adjustmentCount > 0 ? `AI applied lunch deductions to ${adjustmentCount} shifts.` : '')
 
     return {
       success: true,
@@ -444,11 +466,13 @@ export async function convertAttendanceAction(
       outputBase64,
       errors: errors.length > 0 ? errors : undefined,
       insights: {
+        summary,
+        score,
         unknownLeaveCodes: unknownCodes,
         missingOutTimes: missingOuts,
-        duplicateEntries: [], // TBD
-        score,
-        summary
+        totalHours: Math.round(totalHours * 100) / 100,
+        totalLeaveDays,
+        adjustmentCount
       }
     }
 
