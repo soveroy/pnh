@@ -437,8 +437,19 @@ export default function AttendanceConverterPage() {
             <div className="rounded-2xl border border-emerald-800/40 bg-emerald-900/10 p-5 flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <p className="text-[11px] font-semibold text-emerald-500 uppercase tracking-widest">Step 3 — Download</p>
 
+              <button
+                id="btn-download"
+                onClick={handleDownload}
+                className="w-full px-4 py-3 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-all duration-150 flex items-center justify-center gap-2 mb-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download Converted File (.xlsx)
+              </button>
+
               {stats && (
-                <div className="flex gap-6">
+                <div className="flex gap-6 py-2 border-y border-emerald-800/10">
                   <div>
                     <p className="text-2xl font-bold text-neutral-100 font-mono">{stats.employees}</p>
                     <p className="text-[11px] text-neutral-500 uppercase tracking-widest mt-0.5">Employees</p>
@@ -450,8 +461,8 @@ export default function AttendanceConverterPage() {
                   </div>
                   <div className="w-px bg-neutral-800" />
                   <div>
-                    <p className="text-2xl font-bold text-emerald-400 font-mono">100%</p>
-                    <p className="text-[11px] text-neutral-500 uppercase tracking-widest mt-0.5">MGF Confidence</p>
+                    <p className="text-2xl font-bold text-emerald-400 font-mono">{insights?.score || 100}%</p>
+                    <p className="text-[11px] text-neutral-500 uppercase tracking-widest mt-0.5">AI Confidence</p>
                   </div>
                 </div>
               )}
@@ -472,17 +483,6 @@ export default function AttendanceConverterPage() {
                   score={insights.score}
                 />
               )}
-
-              <button
-                id="btn-download"
-                onClick={handleDownload}
-                className="w-full px-4 py-3 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-all duration-150 flex items-center justify-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download Converted File (.xlsx)
-              </button>
 
               <p className="text-[10px] text-neutral-600 text-center">
                 Temporary data purged from memory on page close. No PII retained. PDPA-compliant.
