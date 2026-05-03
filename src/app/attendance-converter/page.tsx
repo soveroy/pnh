@@ -461,20 +461,22 @@ export default function AttendanceConverterPage() {
               </button>
 
               {stats && (
-                <div className="flex gap-6 py-2 border-y border-emerald-800/10">
-                  <div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 border-y border-emerald-800/10">
+                  <div className="p-3 rounded-xl bg-black/20 border border-neutral-800/50">
                     <p className="text-2xl font-bold text-neutral-100 font-mono">{stats.employees}</p>
-                    <p className="text-[11px] text-neutral-500 uppercase tracking-widest mt-0.5">Employees</p>
+                    <p className="text-[10px] text-neutral-500 uppercase tracking-widest mt-1">Headcount</p>
                   </div>
-                  <div className="w-px bg-neutral-800" />
-                  <div>
-                    <p className="text-2xl font-bold text-neutral-100 font-mono">{stats.days}</p>
-                    <p className="text-[11px] text-neutral-500 uppercase tracking-widest mt-0.5">Day Records</p>
+                  <div className="p-3 rounded-xl bg-black/20 border border-neutral-800/50">
+                    <p className="text-2xl font-bold text-neutral-100 font-mono">{insights?.totalHours || 0}</p>
+                    <p className="text-[10px] text-neutral-500 uppercase tracking-widest mt-1">Total Man-Hours</p>
                   </div>
-                  <div className="w-px bg-neutral-800" />
-                  <div>
-                    <p className="text-2xl font-bold text-emerald-400 font-mono">{insights?.score || 100}%</p>
-                    <p className="text-[11px] text-neutral-500 uppercase tracking-widest mt-0.5">AI Confidence</p>
+                  <div className="p-3 rounded-xl bg-black/20 border border-neutral-800/50">
+                    <p className="text-2xl font-bold text-blue-400 font-mono">{insights?.totalLeaveDays || 0}</p>
+                    <p className="text-[10px] text-neutral-500 uppercase tracking-widest mt-1">Leave Days</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-black/20 border border-neutral-800/50">
+                    <p className="text-2xl font-bold text-amber-400 font-mono">{insights?.adjustmentCount || 0}</p>
+                    <p className="text-[10px] text-neutral-500 uppercase tracking-widest mt-1">AI Audit Hits</p>
                   </div>
                 </div>
               )}

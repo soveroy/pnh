@@ -423,7 +423,7 @@ export async function convertAttendanceAction(
     const outputBuf = XLSX.write(tplWb, { type: 'buffer', bookType: 'xlsx' })
     const outputBase64 = Buffer.from(outputBuf).toString('base64')
 
-    // ── Generate AI Insights ────────────────────────────────────────────────
+    // ── Generate AI Insights (Advanced HR Analytics) ────────────────────────
     const unknownCodes = Array.from(new Set(errors.filter(e => e.includes('unknown code')).map(e => e.split('"')[1] || '')))
     const missingOuts = Array.from(new Set(errors.filter(e => e.includes('missing OUT')).map(e => e.split('for ')[1] || '')))
     
