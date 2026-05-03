@@ -331,11 +331,7 @@ export async function convertAttendanceAction(
       return { success: false, error: 'Template missing "EmployeeAttendance" sheet.' }
     }
 
-    // We'll write rows starting at row 8 (index 7)
-    // Format: append all employees
-    // For each employee: 1 summary row + N detail rows (one per non-OFF day)
-    let currentRow = 8
-
+    const allOutputRows: any[][] = []
     let totalDayCount = 0
 
     for (const rec of attendanceRecords) {
@@ -370,8 +366,7 @@ export async function convertAttendanceAction(
         onLeaveDays,        // S: On Leave Days
       ]
 
-      XLSX.utils.sheet_add_aoa(tplWs, [summaryRow], { origin: { r: currentRow - 1, c: 0 } })
-      currentRow++
+      allOutputRows.push(summaryRow)
 
       // ── Detail rows (one per active day) ─────────────────────────────────
       for (const day of activeDays) {
@@ -402,11 +397,13 @@ export async function convertAttendanceAction(
           'Approved',                 // AA: Status
         ]
 
-        XLSX.utils.sheet_add_aoa(tplWs, [detailRow], { origin: { r: currentRow - 1, c: 0 } })
-        currentRow++
+        allOutputRows.push(detailRow)
         totalDayCount++
       }
     }
+
+    // Single Bulk Write (Significantly faster)
+    XLSX.utils.sheet_add_aoa(tplWs, allOutputRows, { origin: { r: 7, c: 0 } })
 
     // ── Generate AI Insights ────────────────────────────────────────────────
     const unknownCodes = Array.from(new Set(errors.filter(e => e.includes('unknown code')).map(e => e.split('"')[1] || '')))
