@@ -309,7 +309,21 @@ export async function convertAttendanceAction(
           const rowEmpCode = String(row[2] || '').trim().toUpperCase()
           const rowEmpName = String(row[3] || '').trim().toUpperCase()
           
-          if (rowEmpCode === empCode || (empCode === 'NULL' && rowEmpName === record.emp.name.toUpperCase())) {
+          // Match by code (preferred) or name (fallback)
+          const codeMatch = rowEmpCode !== '' && rowEmpCode === empCode
+          const nameMatch = rowEmpName !== '' && rowEmpName === record.emp.name.toUpperCase()
+          
+          if (codeMatch || nameMatch) {
+            // Highlighting: Fill in missing details if template is empty but source has them
+            if (rowEmpCode === '' && empCode !== 'NULL') {
+                const cellCode = XLSX.utils.encode_cell({ r, c: 2 })
+                ws[cellCode] = { t: 's', v: empCode }
+            }
+            if (!row[1] && record.emp.workingGroup) {
+                const cellClinic = XLSX.utils.encode_cell({ r, c: 1 })
+                ws[cellClinic] = { t: 's', v: record.emp.workingGroup }
+            }
+
             record.days.forEach((day, dStr) => {
               for (const [c, mappedDStr] of colDateMap) {
                 if (mappedDStr === dStr) {
@@ -348,6 +362,7 @@ export async function convertAttendanceAction(
             break // Found employee row
           }
         }
+
       })
     })
 
