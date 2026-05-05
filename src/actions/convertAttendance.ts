@@ -175,7 +175,8 @@ export async function convertAttendanceAction(
       return { success: false, error: 'Source file missing required columns (Employee Code, Date).' }
     }
 
-    const attendanceRecords = new Map<string, EmployeeAttendance>()
+    const attendanceRecords = new Map<string, { emp: EmpInfo, days: Map<string, DayRecord> }>()
+
 
     for (let i = 1; i < srcData.length; i++) {
       const row = srcData[i]
@@ -186,31 +187,52 @@ export async function convertAttendanceAction(
       const rawDate = row[colIdx.date]
       const date = excelDateToJSDate(rawDate)
       if (!date) continue
+      const dStr = date.toISOString().split('T')[0]
 
+      const workingGroup = colIdx.code !== -1 ? String(row[headerRow.indexOf('Working Group')] || '').trim().toUpperCase() : ''
       const activity = colIdx.activity !== -1 ? String(row[colIdx.activity] || '').trim() : ''
       const inVal = row[colIdx.in]
       const outVal = row[colIdx.out]
 
       const inTime = formatTime(inVal)
       const outTime = formatTime(outVal)
-      const hours = calcHours(inTime, outTime)
 
       if (!attendanceRecords.has(code)) {
         attendanceRecords.set(code, {
-          emp: { code, name, workingGroup: '', designation: '', epc: '', sbu: '' },
-          days: []
+          emp: { code, name, workingGroup, designation: '', epc: '', sbu: '' },
+          days: new Map()
         })
       }
 
-      attendanceRecords.get(code)!.days.push({
-        date,
-        inTime,
-        outTime,
-        leaveCode: activity || null,
-        isOff: false,
-        hoursWorked: hours
-      })
+      const empData = attendanceRecords.get(code)!
+      if (!empData.days.has(dStr)) {
+        empData.days.set(dStr, {
+          date,
+          inTime,
+          outTime,
+          leaveCode: activity || null,
+          isOff: false,
+          hoursWorked: 0
+        })
+      } else {
+        const day = empData.days.get(dStr)!
+        // Client Rule: Earliest IN, Latest OUT
+        if (inTime) {
+          if (!day.inTime || inTime < day.inTime) day.inTime = inTime
+        }
+        if (outTime) {
+          if (!day.outTime || outTime > day.outTime) day.outTime = outTime
+        }
+        if (activity && !day.leaveCode) day.leaveCode = activity
+      }
     }
+
+    // Finalize hours after min/max logic
+    attendanceRecords.forEach(rec => {
+      rec.days.forEach(day => {
+        day.hoursWorked = calcHours(day.inTime, day.outTime)
+      })
+    })
 
     // ── Prepare Template (TEMPLETE - Grid) ────────────────────────────────────
     const tplWb = XLSX.read(templateBuf, { type: 'buffer', cellDates: true })
@@ -221,7 +243,6 @@ export async function convertAttendanceAction(
     }
 
     function toDateString(d: Date) {
-      // Adjust by 12 hours to handle timezone shifts
       const adjusted = new Date(d.getTime() + 12 * 60 * 60 * 1000)
       return adjusted.toISOString().split('T')[0]
     }
@@ -238,7 +259,7 @@ export async function convertAttendanceAction(
       
       // Date row is index 3 (cols 5+)
       const dateRow = data[3] || []
-      const colDateMap = new Map<number, string>() // col index -> YYYY-MM-DD
+      const colDateMap = new Map<number, string>()
       for (let c = 5; c < dateRow.length; c++) {
         const v = dateRow[c]
         const d = excelDateToJSDate(v)
@@ -246,58 +267,90 @@ export async function convertAttendanceAction(
           const dStr = toDateString(d)
           colDateMap.set(c, dStr)
           colDateMap.set(c + 1, dStr)
-          c++ // skip OUT col in loop
+          c++
         }
       }
 
-      // Find employee rows
-      for (let r = 5; r < data.length; r++) {
-        const row = data[r]
-        const empCode = String(row[2] || '').trim().toUpperCase()
-        if (!empCode || !attendanceRecords.has(empCode)) continue
+      // Identify Working Group sections in this sheet
+      const groupSections = new Map<string, number>() // Group Name -> Start Row
+      data.forEach((row, r) => {
+        const cellVal = String(row[0] || row[1] || row[2] || '').toUpperCase()
+        if (cellVal.includes('NHGP -')) {
+            const match = cellVal.match(/NHGP - [^ ]+/)
+            if (match) groupSections.set(match[0].trim(), r)
+            else groupSections.set(cellVal.trim(), r)
+        }
+      })
 
-        const record = attendanceRecords.get(empCode)!
-        record.days.forEach(day => {
-          const dStr = toDateString(day.date)
-          // Find the column for this date
-          for (const [c, mappedDStr] of colDateMap) {
-            if (mappedDStr === dStr) {
-              // c is IN, c+1 is OUT
-              const cellIn = XLSX.utils.encode_cell({ r, c })
-              const cellOut = XLSX.utils.encode_cell({ r, c: c + 1 })
-              
-              if (day.leaveCode) {
-                ws[cellIn] = { t: 's', v: day.leaveCode }
-                ws[cellOut] = { t: 's', v: day.leaveCode }
-                totalLeaveDays++
-                totalDayCount++
-              } else {
-                if (day.inTime) {
-                  ws[cellIn] = { t: 's', v: day.inTime }
-                  totalDayCount++
-                }
-                if (day.outTime) {
-                  ws[cellOut] = { t: 's', v: day.outTime }
-                }
+      // Map employees to the template
+      attendanceRecords.forEach((record, empCode) => {
+        const empGroup = record.emp.workingGroup
+        // Find the section for this group
+        let startRow = 5
+        let endRow = data.length
+        
+        // Find the closest group section header
+        const sections = Array.from(groupSections.keys())
+        const targetSection = sections.find(s => empGroup.includes(s) || s.includes(empGroup))
+        
+        if (targetSection) {
+            startRow = groupSections.get(targetSection)!
+            // End row is the start of the next section
+            const nextSectionRow = Array.from(groupSections.values())
+                .filter(r => r > startRow)
+                .sort((a, b) => a - b)[0]
+            if (nextSectionRow) endRow = nextSectionRow
+        }
 
-                // Apply lunch deduction analytics
-                if (day.hoursWorked > 0) {
-                  totalHours += day.hoursWorked
-                  if (day.inTime && day.outTime) {
-                     const [ih, im] = day.inTime.split(':').map(Number)
-                     const [oh, om] = day.outTime.split(':').map(Number)
-                     let rawMins = (oh * 60 + om) - (ih * 60 + im)
-                     if (rawMins < 0) rawMins += 24 * 60
-                     if (rawMins / 60 > 5.0) adjustmentCount++
+        // Search for employee within the identified range (or whole sheet if group not found)
+        for (let r = startRow; r < endRow; r++) {
+          const row = data[r]
+          if (!row) continue
+          const rowEmpCode = String(row[2] || '').trim().toUpperCase()
+          const rowEmpName = String(row[3] || '').trim().toUpperCase()
+          
+          if (rowEmpCode === empCode || (empCode === 'NULL' && rowEmpName === record.emp.name.toUpperCase())) {
+            record.days.forEach((day, dStr) => {
+              for (const [c, mappedDStr] of colDateMap) {
+                if (mappedDStr === dStr) {
+                  const cellIn = XLSX.utils.encode_cell({ r, c })
+                  const cellOut = XLSX.utils.encode_cell({ r, c: c + 1 })
+                  
+                  if (day.leaveCode) {
+                    ws[cellIn] = { t: 's', v: day.leaveCode }
+                    ws[cellOut] = { t: 's', v: day.leaveCode }
+                    totalLeaveDays++
+                    totalDayCount++
+                  } else {
+                    if (day.inTime) {
+                      ws[cellIn] = { t: 's', v: day.inTime }
+                      totalDayCount++
+                    }
+                    if (day.outTime) {
+                      ws[cellOut] = { t: 's', v: day.outTime }
+                    }
+
+                    if (day.hoursWorked > 0) {
+                      totalHours += day.hoursWorked
+                      if (day.inTime && day.outTime) {
+                         const [ih, im] = day.inTime.split(':').map(Number)
+                         const [oh, om] = day.outTime.split(':').map(Number)
+                         let rawMins = (oh * 60 + om) - (ih * 60 + im)
+                         if (rawMins < 0) rawMins += 24 * 60
+                         if (rawMins / 60 > 5.0) adjustmentCount++
+                      }
+                    }
                   }
+                  break
                 }
               }
-              break // Found date
-            }
+            })
+            break // Found employee row
           }
-        })
-      }
+        }
+      })
     })
+
 
 
     const outputBuf = XLSX.write(tplWb, { type: 'buffer', bookType: 'xlsx' })
