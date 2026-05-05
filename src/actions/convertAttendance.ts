@@ -113,10 +113,22 @@ function excelDateToJSDate(val: unknown): Date | null {
   if (val instanceof Date) return val
   if (typeof val === 'number') {
     // XLSX serial date
-    return XLSX.SSF.parse_date_code(val) ? new Date((val - 25569) * 86400 * 1000) : null
+    return new Date((val - 25569) * 86400 * 1000)
+  }
+  if (typeof val === 'string') {
+    const s = val.trim()
+    // Handle DD/MM/YYYY
+    const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+    if (dmy) {
+      const [_, d, m, y] = dmy
+      return new Date(Date.UTC(parseInt(y), parseInt(m) - 1, parseInt(d)))
+    }
+    const d = new Date(s)
+    if (!isNaN(d.getTime())) return d
   }
   return null
 }
+
 
 function formatDate(d: Date): string {
   const dd = String(d.getUTCDate()).padStart(2, '0')
@@ -138,340 +150,180 @@ export async function convertAttendanceAction(
     const sourceBuf = Buffer.from(sourceBase64, 'base64')
     const templateBuf = Buffer.from(templateBase64, 'base64')
 
-    // ── Parse Source ────────────────────────────────────────────────────────
-    const srcWb = XLSX.read(sourceBuf, { type: 'buffer', cellDates: false })
+    // ── Parse Source (RAW DATA - Flat List) ──────────────────────────────────
+    const srcWb = XLSX.read(sourceBuf, { type: 'buffer', cellDates: true })
+    const srcSheetName = srcWb.SheetNames.find(s => s === 'EmployeeAttendance') || srcWb.SheetNames[0]
+    const srcWs = srcWb.Sheets[srcSheetName]
+    const srcData = XLSX.utils.sheet_to_json<any[]>(srcWs, { header: 1, raw: true })
 
-    const sheetNames = srcWb.SheetNames
-    const sheet1Name = sheetNames.find(s => s.includes('1st'))
-    const sheet2Name = sheetNames.find(s => s.includes('2nd'))
-    const empListName = sheetNames.find(s => s.toLowerCase().includes('emp'))
-
-    if (!sheet1Name || !sheet2Name) {
-      return { success: false, error: 'Source file missing "1st Half" or "2nd Half" sheets.' }
+    if (srcData.length < 2) {
+      return { success: false, error: 'Source file is empty or missing "EmployeeAttendance" sheet.' }
     }
 
-    // ── EMP LIST ─────────────────────────────────────────────────────────────
-    const empMap = new Map<string, EmpInfo>()
-    if (empListName) {
-      const empWs = srcWb.Sheets[empListName]
-      const empData = XLSX.utils.sheet_to_json<any[]>(empWs, { header: 1 })
-      // Row 0 = header: EMPLOYEE CODE | Employee Name | Nationality | Working Group | Designation
-      for (let i = 1; i < empData.length; i++) {
-        const row = empData[i]
-        const code = String(row[0] || '').trim()
-        if (!code) continue
-        empMap.set(code.toUpperCase(), {
-          code: code.toUpperCase(),
-          name: String(row[1] || '').trim(),
-          epc: String(row[2] || 'GM-OPT').trim(),
-          workingGroup: String(row[3] || 'VITA-KALLANG WAY').trim(),
-          sbu: String(row[4] || 'OPERATION2').trim(),
-          designation: String(row[5] || '').trim(),
+    // Identify columns
+    const headerRow = srcData[0]
+    const colIdx = {
+      code: headerRow.indexOf('Employee Code'),
+      name: headerRow.indexOf('Employee Name'),
+      date: headerRow.indexOf('Date'),
+      activity: headerRow.indexOf('Activity'),
+      in: headerRow.indexOf('Time In'),
+      out: headerRow.indexOf('Time Out')
+    }
+
+    if (colIdx.code === -1 || colIdx.date === -1) {
+      return { success: false, error: 'Source file missing required columns (Employee Code, Date).' }
+    }
+
+    const attendanceRecords = new Map<string, EmployeeAttendance>()
+
+    for (let i = 1; i < srcData.length; i++) {
+      const row = srcData[i]
+      const code = String(row[colIdx.code] || '').trim().toUpperCase()
+      if (!code || code === 'NULL' || code === 'EMPLOYEE CODE') continue
+
+      const name = String(row[colIdx.name] || '').trim()
+      const rawDate = row[colIdx.date]
+      const date = excelDateToJSDate(rawDate)
+      if (!date) continue
+
+      const activity = colIdx.activity !== -1 ? String(row[colIdx.activity] || '').trim() : ''
+      const inVal = row[colIdx.in]
+      const outVal = row[colIdx.out]
+
+      const inTime = formatTime(inVal)
+      const outTime = formatTime(outVal)
+      const hours = calcHours(inTime, outTime)
+
+      if (!attendanceRecords.has(code)) {
+        attendanceRecords.set(code, {
+          emp: { code, name, workingGroup: '', designation: '', epc: '', sbu: '' },
+          days: []
         })
       }
+
+      attendanceRecords.get(code)!.days.push({
+        date,
+        inTime,
+        outTime,
+        leaveCode: activity || null,
+        isOff: false,
+        hoursWorked: hours
+      })
     }
 
-    // ── Parse a half-sheet ────────────────────────────────────────────────────
-    function parseHalfSheet(sheetName: string): Map<string, DayRecord[]> {
-      const ws = srcWb.Sheets[sheetName]
-      const raw = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, raw: true })
+    // ── Prepare Template (TEMPLETE - Grid) ────────────────────────────────────
+    const tplWb = XLSX.read(templateBuf, { type: 'buffer', cellDates: true })
+    const staffSheets = tplWb.SheetNames.filter(s => s.startsWith('Staff Attendance'))
 
-      // Find the date row and IN/OUT row
-      // Date row: row where cols 5+ contain Excel date serials
-      // IN/OUT row: row where cols 5+ contain "IN" / "OUT" strings
-      let dateRowIdx = -1
-      let inOutRowIdx = -1
+    if (staffSheets.length === 0) {
+      return { success: false, error: 'Template missing "Staff Attendance" sheets.' }
+    }
 
-      for (let r = 0; r < Math.min(10, raw.length); r++) {
-        const row = raw[r]
-        const col5 = row[5]
-        if (typeof col5 === 'number' && col5 > 40000) {
-          // Looks like an Excel date serial
-          dateRowIdx = r
-        }
-        if (typeof col5 === 'string' && col5.includes('IN')) {
-          inOutRowIdx = r
-        }
-      }
+    function toDateString(d: Date) {
+      // Adjust by 12 hours to handle timezone shifts
+      const adjusted = new Date(d.getTime() + 12 * 60 * 60 * 1000)
+      return adjusted.toISOString().split('T')[0]
+    }
 
-      if (dateRowIdx === -1) {
-        // Fallback: row 3 (0-indexed) is the date row
-        dateRowIdx = 3
-        inOutRowIdx = 4
-      }
+    let totalDayCount = 0
+    let totalHours = 0
+    let adjustmentCount = 0
+    let totalLeaveDays = 0
 
-      const dateRow = raw[dateRowIdx] || []
-      // Build col→date map (cols 5+ that have date serials)
-      // Each date occupies 2 columns: IN col (even) and OUT col (odd)
-      const colDateMap = new Map<number, Date>()
-      let currentDate: Date | null = null
+    // Process each staff sheet in the template
+    staffSheets.forEach(sheetName => {
+      const ws = tplWb.Sheets[sheetName]
+      const data = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, raw: true })
+      
+      // Date row is index 3 (cols 5+)
+      const dateRow = data[3] || []
+      const colDateMap = new Map<number, string>() // col index -> YYYY-MM-DD
       for (let c = 5; c < dateRow.length; c++) {
         const v = dateRow[c]
-        if (typeof v === 'number' && v > 40000) {
-          currentDate = new Date((v - 25569) * 86400 * 1000)
-          colDateMap.set(c, currentDate)
-        } else if (currentDate !== null && !colDateMap.has(c)) {
-          // The OUT column inherits the same date as the preceding IN column
-          colDateMap.set(c, currentDate)
+        const d = excelDateToJSDate(v)
+        if (d) {
+          const dStr = toDateString(d)
+          colDateMap.set(c, dStr)
+          colDateMap.set(c + 1, dStr)
+          c++ // skip OUT col in loop
         }
       }
 
-      // Find employee data rows (row index >= inOutRowIdx + 1)
-      const result = new Map<string, DayRecord[]>()
-      const empStartRow = inOutRowIdx + 1
+      // Find employee rows
+      for (let r = 5; r < data.length; r++) {
+        const row = data[r]
+        const empCode = String(row[2] || '').trim().toUpperCase()
+        if (!empCode || !attendanceRecords.has(empCode)) continue
 
-      for (let r = empStartRow; r < raw.length; r++) {
-        const row = raw[r]
-        let empCode = String(row[2] || '').trim().toUpperCase()
-        const empName = String(row[3] || '').trim()
+        const record = attendanceRecords.get(empCode)!
+        record.days.forEach(day => {
+          const dStr = toDateString(day.date)
+          // Find the column for this date
+          for (const [c, mappedDStr] of colDateMap) {
+            if (mappedDStr === dStr) {
+              // c is IN, c+1 is OUT
+              const cellIn = XLSX.utils.encode_cell({ r, c })
+              const cellOut = XLSX.utils.encode_cell({ r, c: c + 1 })
+              
+              if (day.leaveCode) {
+                ws[cellIn] = { t: 's', v: day.leaveCode }
+                ws[cellOut] = { t: 's', v: day.leaveCode }
+                totalLeaveDays++
+                totalDayCount++
+              } else {
+                if (day.inTime) {
+                  ws[cellIn] = { t: 's', v: day.inTime }
+                  totalDayCount++
+                }
+                if (day.outTime) {
+                  ws[cellOut] = { t: 's', v: day.outTime }
+                }
 
-        if (!empCode || empCode === 'NULL') {
-          // Intelligence: Fallback to name search if code is missing in attendance sheet
-          const match = Array.from(empMap.values()).find(e => e.name.toUpperCase() === empName.toUpperCase())
-          if (match) empCode = match.code
-        }
-
-        if (!empCode || empCode === 'NULL') continue
-
-        // Collect day records
-        const days: DayRecord[] = []
-        // Walk through columns in pairs (IN, OUT)
-        const cols = Array.from(colDateMap.keys()).filter((_, i, arr) => {
-          // Only take the IN col of each pair (every 2nd unique date start)
-          // Strategy: group by date
-          return true
-        })
-
-        // Build date→{inCol, outCol} map
-        const dateColMap = new Map<string, { inCol: number; outCol: number }>()
-        let lastDate = ''
-        for (let c = 5; c < (raw[dateRowIdx] || []).length; c++) {
-          const d = colDateMap.get(c)
-          if (!d) continue
-          const dStr = d.toISOString().split('T')[0]
-          if (!dateColMap.has(dStr)) {
-            dateColMap.set(dStr, { inCol: c, outCol: c + 1 })
-          }
-        }
-
-        for (const [dStr, { inCol, outCol }] of dateColMap) {
-          const inVal = row[inCol]
-          const outVal = row[outCol]
-
-          // Determine if it's a time or a code
-          const isInTime = typeof inVal === 'number' && inVal < 1 // fractional = time
-          const isOutTime = typeof outVal === 'number' && outVal < 1
-
-          let leaveCode: string | null = null
-          let isOff = false
-          let inTime: string | null = null
-          let outTime: string | null = null
-
-          if (isInTime) {
-            inTime = formatTime(inVal)
-            outTime = isOutTime ? formatTime(outVal) : null
-          } else {
-            const codeStr = String(inVal || '').trim().toUpperCase()
-            if (codeStr === 'OFF' || codeStr === '0FF') {
-              isOff = true
-            } else if (LEAVE_CODE_MAP[codeStr]) {
-              leaveCode = LEAVE_CODE_MAP[codeStr]
-              // Some leave rows still have clock times
-              if (isOutTime) outTime = formatTime(outVal)
-            } else if (codeStr === '' || codeStr === '0' || codeStr === 'NULL') {
-              isOff = true
+                // Apply lunch deduction analytics
+                if (day.hoursWorked > 0) {
+                  totalHours += day.hoursWorked
+                  if (day.inTime && day.outTime) {
+                     const [ih, im] = day.inTime.split(':').map(Number)
+                     const [oh, om] = day.outTime.split(':').map(Number)
+                     let rawMins = (oh * 60 + om) - (ih * 60 + im)
+                     if (rawMins < 0) rawMins += 24 * 60
+                     if (rawMins / 60 > 5.0) adjustmentCount++
+                  }
+                }
+              }
+              break // Found date
             }
           }
-
-          const hours = calcHours(inTime, outTime)
-          const [y, m, day] = dStr.split('-').map(Number)
-          const date = new Date(Date.UTC(y, m - 1, day))
-
-          days.push({ date, inTime, outTime, leaveCode, isOff, hoursWorked: hours })
-        }
-
-        if (!result.has(empCode)) {
-          result.set(empCode, days)
-        } else {
-          // Merge (shouldn't happen but just in case)
-          const existing = result.get(empCode)!
-          result.set(empCode, [...existing, ...days])
-        }
+        })
       }
+    })
 
-      return result
-    }
-
-    const half1 = parseHalfSheet(sheet1Name)
-    const half2 = parseHalfSheet(sheet2Name)
-
-    // ── Merge halves ──────────────────────────────────────────────────────────
-    const allEmps = new Set([...half1.keys(), ...half2.keys()])
-    const attendanceRecords: EmployeeAttendance[] = []
-
-    for (const code of allEmps) {
-      const empInfo = empMap.get(code) || {
-        code,
-        name: '',
-        workingGroup: '',
-        designation: '',
-        epc: 'GM-OPT',
-        sbu: 'OPERATION2',
-      }
-
-      // Get name from half1 or half2 row if not in EMP LIST
-      if (!empInfo.name) {
-        const ws1 = srcWb.Sheets[sheet1Name]
-        const raw1 = XLSX.utils.sheet_to_json<any[]>(ws1, { header: 1, raw: true })
-        for (const row of raw1) {
-          if (String(row[2] || '').trim().toUpperCase() === code) {
-            empInfo.name = String(row[3] || '').trim()
-            break
-          }
-        }
-      }
-
-      const days1 = half1.get(code) || []
-      const days2 = half2.get(code) || []
-      const allDays = [...days1, ...days2].sort((a, b) => a.date.getTime() - b.date.getTime())
-
-      attendanceRecords.push({ emp: empInfo, days: allDays })
-    }
-
-    // ── Build output rows ─────────────────────────────────────────────────────
-    // Load blank template
-    const tplWb = XLSX.read(templateBuf, { type: 'buffer', cellDates: false })
-    const tplWs = tplWb.Sheets['EmployeeAttendance']
-    if (!tplWs) {
-      return { success: false, error: 'Template missing "EmployeeAttendance" sheet.' }
-    }
-
-    const allOutputRows: any[][] = []
-    let totalDayCount = 0
-
-    for (const rec of attendanceRecords) {
-      const { emp, days } = rec
-      const activeDays = days.filter(d => !d.isOff)
-      const leaveDays = activeDays.filter(d => d.leaveCode !== null)
-      const workDays = activeDays.filter(d => d.leaveCode === null && d.inTime !== null)
-
-      const totalHours = workDays.reduce((sum, d) => sum + d.hoursWorked, 0)
-      const onLeaveDays = leaveDays.length
-
-      // ── Summary row ──────────────────────────────────────────────────────
-      const summaryRow = [
-        emp.code,           // A: Employee Code
-        emp.name,           // B: Employee Name
-        emp.epc,            // C: EPC
-        emp.workingGroup,   // D: Working Group
-        emp.sbu,            // E: SBU
-        emp.designation,    // F: Designation
-        Math.round(totalHours * 100) / 100, // G: Total Working Hours
-        Math.round(totalHours * 100) / 100, // H: Normal Working Hours
-        0,                  // I: Raw OT Hours
-        0,                  // J: Rounded OT Hours
-        0,                  // K: Raw Lateness Hours
-        0,                  // L: Rounded Lateness Hours
-        0,                  // M: Raw Early Leaving Hours
-        0,                  // N: Rounded Early Leaving Hours
-        0,                  // O: No Record Days
-        0,                  // P: OT Days
-        0,                  // Q: Late Days
-        0,                  // R: Early Leaving Days
-        onLeaveDays,        // S: On Leave Days
-      ]
-
-      allOutputRows.push(summaryRow)
-
-      // ── Detail rows (one per active day) ─────────────────────────────────
-      for (const day of activeDays) {
-        const detailRow = [
-          emp.code,                   // A: Employee Code
-          emp.name,                   // B: Employee Name
-          emp.epc,                    // C: EPC
-          emp.workingGroup,           // D: Working Group
-          emp.sbu,                    // E: SBU
-          emp.designation,            // F: Designation
-          formatDate(day.date),       // G: Date
-          day.leaveCode || null,      // H: Leave Code (null = working day)
-          null,                       // I: (blank)
-          day.inTime || (day.leaveCode ? '00:00' : null),   // J: IN
-          day.outTime || (day.leaveCode ? '00:00' : null),  // K: OUT
-          null,                       // L: (blank)
-          null,                       // M: Location IN
-          null,                       // N: Location OUT
-          null,                       // O: GPS IN
-          null,                       // P: GPS OUT
-          null,                       // Q: (blank)
-          day.leaveCode ? null : (day.hoursWorked > 0 ? String(day.hoursWorked) : null), // R: Hours
-          '0',                        // S: OT
-          '0',                        // T: Lateness
-          null, null, null, null,
-          day.inTime || null,         // Y: Actual IN (mirror)
-          day.outTime || null,        // Z: Actual OUT (mirror)
-          'Approved',                 // AA: Status
-        ]
-
-        allOutputRows.push(detailRow)
-        totalDayCount++
-      }
-    }
-
-    // Single Bulk Write (Significantly faster)
-    XLSX.utils.sheet_add_aoa(tplWs, allOutputRows, { origin: { r: 7, c: 0 } })
 
     const outputBuf = XLSX.write(tplWb, { type: 'buffer', bookType: 'xlsx' })
     const outputBase64 = Buffer.from(outputBuf).toString('base64')
 
-    // ── Generate AI Insights (Advanced HR Analytics) ────────────────────────
-    const unknownCodes = Array.from(new Set(errors.filter(e => e.includes('unknown code')).map(e => e.split('"')[1] || '')))
-    const missingOuts = Array.from(new Set(errors.filter(e => e.includes('missing OUT')).map(e => e.split('for ')[1] || '')))
-    
-    let totalHours = 0
-    let totalLeaveDays = 0
-    let adjustmentCount = 0
-
-    attendanceRecords.forEach(rec => {
-      rec.days.forEach(d => {
-        if (!d.isOff) {
-          if (d.leaveCode) totalLeaveDays++
-          else {
-            totalHours += d.hoursWorked
-            if (d.inTime && d.outTime) {
-                const [ih, im] = d.inTime.split(':').map(Number)
-                const [oh, om] = d.outTime.split(':').map(Number)
-                let rawMins = (oh * 60 + om) - (ih * 60 + im)
-                if (rawMins < 0) rawMins += 24 * 60
-                if (rawMins / 60 > 5.0) adjustmentCount++
-            }
-          }
-        }
-      })
-    })
-
-    // Simple Score Calculation
+    // ── Generate AI Insights ──────────────────────────────────────────────────
     let score = 100
-    if (unknownCodes.length > 0) score -= 5
-    if (missingOuts.length > 0) score -= 10
-    if (attendanceRecords.length === 0) score = 0
+    if (attendanceRecords.size === 0) score = 0
 
-    const summary = `Successfully converted ${attendanceRecords.length} employees. ` +
-      `Processed ${totalHours.toFixed(1)} total man-hours with ${totalLeaveDays} leave days. ` +
+    const summary = `Successfully processed ${attendanceRecords.size} employees. ` +
+      `Mapped ${totalHours.toFixed(1)} total man-hours. ` +
       (adjustmentCount > 0 ? `AI applied lunch deductions to ${adjustmentCount} shifts.` : '')
 
     return {
       success: true,
-      employeeCount: attendanceRecords.length,
+      employeeCount: attendanceRecords.size,
       dayCount: totalDayCount,
       outputBase64,
       errors: errors.length > 0 ? errors : undefined,
       insights: {
         summary,
         score,
-        unknownLeaveCodes: unknownCodes,
-        missingOutTimes: missingOuts,
+        unknownLeaveCodes: [],
+        missingOutTimes: [],
         totalHours: Math.round(totalHours * 100) / 100,
-        totalLeaveDays,
+        totalLeaveDays: 0,
         adjustmentCount
       }
     }
@@ -489,29 +341,21 @@ export async function validateSourceAction(sourceBase64: string): Promise<Valida
     const checks: ValidationResult['checks'] = []
 
     // 1. Sheet presence
-    const sheet1 = wb.SheetNames.find(s => s.includes('1st'))
-    const sheet2 = wb.SheetNames.find(s => s.includes('2nd'))
+    const mainSheet = wb.SheetNames.find(s => s === 'EmployeeAttendance')
     
-    if (sheet1 && sheet2) {
-      checks.push({ label: 'Sheet Structure', status: 'pass', detail: 'Found both 1st and 2nd Half sheets.' })
+    if (mainSheet) {
+      checks.push({ label: 'Sheet Structure', status: 'pass', detail: 'Found "EmployeeAttendance" sheet.' })
     } else {
-      checks.push({ label: 'Sheet Structure', status: 'fail', detail: 'Missing required 1st or 2nd Half sheets.' })
+      checks.push({ label: 'Sheet Structure', status: 'fail', detail: 'Missing "EmployeeAttendance" sheet.' })
     }
 
-    // 2. Emp List
-    const empList = wb.SheetNames.find(s => s.toLowerCase().includes('emp'))
-    if (empList) {
-      checks.push({ label: 'Employee Registry', status: 'pass', detail: 'EMP LIST sheet detected for mapping.' })
-    } else {
-      checks.push({ label: 'Employee Registry', status: 'warn', detail: 'No EMP LIST found. Using names from attendance rows.' })
-    }
-
-    // 3. Data Scan
+    // 2. Data Scan
     let empCount = 0
-    if (sheet1) {
-      const ws = wb.Sheets[sheet1]
+    if (mainSheet) {
+      const ws = wb.Sheets[mainSheet]
       const data = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 })
-      empCount = data.length > 5 ? data.length - 5 : 0 // Rough estimate
+      const codes = new Set(data.slice(1).map(r => String(r[0] || '').trim()).filter(c => c && c !== 'Employee Code'))
+      empCount = codes.size
     }
 
     return {
@@ -519,7 +363,7 @@ export async function validateSourceAction(sourceBase64: string): Promise<Valida
       checks,
       meta: {
         employeeCount: empCount,
-        dateRange: 'Detected from sheets',
+        dateRange: 'Detected from list',
         sheetCount: wb.SheetNames.length
       }
     }
@@ -527,3 +371,4 @@ export async function validateSourceAction(sourceBase64: string): Promise<Valida
     return { success: false, checks: [{ label: 'File Parse', status: 'fail', detail: e.message }] }
   }
 }
+
