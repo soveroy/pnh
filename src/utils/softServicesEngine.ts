@@ -209,7 +209,7 @@ function fillAttendance(
   ptSet: Set<string>
 ): string {
   const wb = XLSX.read(templateB64, { type: 'base64', cellStyles: true })
-  const SHEETS = ['GEY', 'TPY', 'AMK', 'HOUGANG', 'SERANGOON']
+  const SHEETS = wb.SheetNames
 
   for (const sheetName of SHEETS) {
     const ws = wb.Sheets[sheetName]
