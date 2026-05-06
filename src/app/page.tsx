@@ -44,6 +44,24 @@ export default function HubDashboard() {
               </div>
             </Link>
 
+            <Link href="/ot-verification" className="group block">
+              <div className="p-6 rounded-lg border border-amber-900/40 bg-amber-950/20 hover:bg-amber-900/20 hover:border-amber-800/60 transition-all cursor-pointer h-full flex flex-col">
+                <div className="w-10 h-10 rounded-md bg-amber-900/30 flex items-center justify-center mb-4 group-hover:bg-amber-900/50 transition-colors">
+                  <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
+                <h3 className="text-base font-medium text-neutral-200 mb-2">HR Hard Service — DST & Minor OT Allowance Integrated Verification</h3>
+                <p className="text-sm text-neutral-400 flex-1">
+                  Validate DST and MINOR OT allowance claims against HR attendance timesheets for PNHR, PFS, and GM. Applies full SOP eligibility rules and flags all discrepancies.
+                </p>
+                <div className="mt-6 flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 text-[10px] font-semibold uppercase tracking-widest border border-amber-800/40">Hard Services</span>
+                  <span className="text-xs font-medium text-amber-600 uppercase tracking-wider ml-auto">Launch Tool &rarr;</span>
+                </div>
+              </div>
+            </Link>
+
           </div>
         </section>
       </div>
