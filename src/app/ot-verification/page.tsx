@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { runOtVerification } from '@/utils/otVerificationEngine'
+import { uploadEvidenceAction } from '@/actions/uploadEvidence'
 
 type UploadState = 'idle' | 'dragging' | 'ready'
 type StepStatus = 'pending' | 'running' | 'done' | 'error'
@@ -13,6 +14,7 @@ interface Step { label: string; status: StepStatus; detail?: string }
 const STEPS: Step[] = [
   { label: 'Parse attendance timesheets (PNHR, PFS, GM)', status: 'pending' },
   { label: 'Parse DST & MINOR claim namelists', status: 'pending' },
+  { label: 'Parse and upload evidence photos', status: 'pending' },
   { label: 'Resolve DST vs MINOR conflicts', status: 'pending' },
   { label: 'Run SOP eligibility checks (Conditions A, B, C)', status: 'pending' },
   { label: 'Generate verified output workbook', status: 'pending' },
@@ -33,32 +35,44 @@ function StepIcon({ status }: { status: StepStatus }) {
   )
 }
 
-function UploadZone({ slot, label, hint, color, fileSlot, onFile }: {
-  slot: string; label: string; hint: string; color: string; fileSlot: FileSlot; onFile: (f: File) => void
+function UploadZone({ slot, label, hint, color, fileSlot, onFile, multiple = false }: {
+  slot: string; label: string; hint: string; color: string; fileSlot: FileSlot | { state: UploadState; files: File[] }; onFile: (f: File | File[]) => void; multiple?: boolean
 }) {
   const [drag, setDrag] = useState(false)
   const ref = useRef<HTMLInputElement>(null)
-  const isReady = fileSlot.state === 'ready'
+  
+  const isMulti = 'files' in fileSlot
+  const isReady = isMulti ? fileSlot.files.length > 0 : (fileSlot as FileSlot).state === 'ready'
 
   return (
     <div className="flex flex-col gap-2">
       <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-widest">{label}</p>
-      <input ref={ref} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f) }} />
+      <input ref={ref} type="file" accept={multiple ? "image/*" : ".xlsx,.xls"} multiple={multiple} className="hidden" onChange={e => { 
+        if (multiple) {
+          const files = Array.from(e.target.files || [])
+          if (files.length > 0) onFile(files)
+        } else {
+          const f = e.target.files?.[0]; 
+          if (f) onFile(f) 
+        }
+      }} />
       <div
-        onClick={() => { if (!isReady) ref.current?.click() }}
+        onClick={() => { if (!isReady || multiple) ref.current?.click() }}
         onDragOver={e => { e.preventDefault(); setDrag(true) }}
         onDragLeave={() => setDrag(false)}
-        onDrop={e => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) onFile(f) }}
+        onDrop={e => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files; if (f.length > 0) onFile(multiple ? Array.from(f) : f[0]) }}
         className={[
           'relative h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-200 select-none',
-          isReady ? `border-${color}-600/60 bg-${color}-900/10 cursor-default` : drag ? 'border-amber-500/80 bg-amber-900/10 scale-[1.01]' : 'border-neutral-700 hover:border-neutral-500 hover:bg-neutral-800/30'
+          isReady ? `border-${color}-600/60 bg-${color}-900/10 ${multiple ? '' : 'cursor-default'}` : drag ? 'border-amber-500/80 bg-amber-900/10 scale-[1.01]' : 'border-neutral-700 hover:border-neutral-500 hover:bg-neutral-800/30'
         ].join(' ')}
       >
         {isReady ? (
           <>
             <svg className={`w-6 h-6 text-${color}-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" /></svg>
-            <p className={`text-xs font-semibold text-${color}-400`}>Ready</p>
-            <p className="text-[10px] text-neutral-500 max-w-[160px] truncate text-center px-2">{fileSlot.file?.name}</p>
+            <p className={`text-xs font-semibold text-${color}-400`}>{multiple ? `${(fileSlot as any).files.length} Photos Ready` : 'File Ready'}</p>
+            <p className="text-[10px] text-neutral-500 max-w-[160px] truncate text-center px-2">
+              {multiple ? 'Click to add more' : (fileSlot as FileSlot).file?.name}
+            </p>
           </>
         ) : drag ? (
           <p className="text-xs font-medium text-amber-300">Drop to upload</p>
@@ -66,7 +80,7 @@ function UploadZone({ slot, label, hint, color, fileSlot, onFile }: {
           <>
             <svg className="w-6 h-6 text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
             <p className="text-xs font-medium text-neutral-300 text-center px-3">{hint}</p>
-            <p className="text-[10px] text-neutral-600">Click or drag & drop · .xlsx only</p>
+            <p className="text-[10px] text-neutral-600">Click or drag & drop · {multiple ? 'Images' : '.xlsx'} only</p>
           </>
         )}
       </div>
@@ -88,6 +102,8 @@ export default function OtVerificationPage() {
   const [attendance, setAttendance] = useState<FileSlot>({ state: 'idle', file: null, base64: null })
   const [claims, setClaims] = useState<FileSlot>({ state: 'idle', file: null, base64: null })
   const [template, setTemplate] = useState<FileSlot>({ state: 'idle', file: null, base64: null })
+  const [photos, setPhotos] = useState<{ state: UploadState; files: File[] }>({ state: 'idle', files: [] })
+  
   const [steps, setSteps] = useState<Step[]>(STEPS.map(s => ({ ...s })))
   const [running, setRunning] = useState(false)
   const [outputB64, setOutputB64] = useState<string | null>(null)
@@ -103,15 +119,44 @@ export default function OtVerificationPage() {
       r.readAsDataURL(file)
     })
 
-  const handleFile = useCallback(async (file: File, slot: 'attendance' | 'claims' | 'template') => {
-    if (!file.name.match(/\.(xlsx|xls)$/i)) { setGlobalError('Only .xlsx / .xls files are accepted.'); return }
+  const handleFile = useCallback(async (file: File | File[], slot: 'attendance' | 'claims' | 'template' | 'photos') => {
     setGlobalError(null)
-    const b64 = await readB64(file)
-    const s: FileSlot = { state: 'ready', file, base64: b64 }
+    if (slot === 'photos') {
+      const newFiles = file as File[]
+      setPhotos(prev => ({ state: 'ready', files: [...prev.files, ...newFiles] }))
+      return
+    }
+
+    const f = file as File
+    if (!f.name.match(/\.(xlsx|xls)$/i)) { setGlobalError('Only .xlsx / .xls files are accepted.'); return }
+    const b64 = await readB64(f)
+    const s: FileSlot = { state: 'ready', file: f, base64: b64 }
     if (slot === 'attendance') setAttendance(s)
     else if (slot === 'claims') setClaims(s)
     else setTemplate(s)
   }, [])
+
+  const parsePhotoName = (fileName: string) => {
+    // Expected: Name_MM-DD.jpg or Name_YYYY-MM-DD.jpg
+    const base = fileName.split('.')[0]
+    const parts = base.split('_')
+    let name = parts[0]
+    let dateStr = parts[1] || ''
+    
+    // Clean name (remove trailing numbers/hashes if any)
+    name = name.replace(/[\d#]/g, '').trim()
+
+    // Normalize date to YYYY-MM-DD
+    if (dateStr.match(/^\d{1,2}-\d{1,2}$/)) {
+      dateStr = `2026-${dateStr.padStart(5, '0')}` // Assume 2026
+    } else if (dateStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+      // already good
+    } else {
+      dateStr = '2026-04-01' // fallback
+    }
+    
+    return { name, date: dateStr }
+  }
 
   const updateStep = (idx: number, updates: Partial<Step>) =>
     setSteps(prev => prev.map((s, i) => i === idx ? { ...s, ...updates } : s))
@@ -124,28 +169,56 @@ export default function OtVerificationPage() {
     setSteps(STEPS.map(s => ({ ...s, status: 'pending' })))
 
     try {
+      // Step 0: Attendance
       updateStep(0, { status: 'running' }); await delay(300)
       updateStep(0, { status: 'done', detail: 'PNHR, PFS, GM sheets parsed' })
 
+      // Step 1: Claims
       updateStep(1, { status: 'running' }); await delay(200)
       updateStep(1, { status: 'done', detail: 'DST-OT-NAMELIST & MINOR-OT-NAMELIST loaded' })
 
-      updateStep(2, { status: 'running' }); await delay(200)
-      updateStep(2, { status: 'done' })
+      // Step 2: Photos
+      updateStep(2, { status: 'running' })
+      const evidenceMetadata = []
+      const folderPath = `2026-04` // Should be dynamic based on claim month
+      
+      for (let i = 0; i < photos.files.length; i++) {
+        const file = photos.files[i]
+        updateStep(2, { detail: `Uploading ${i+1}/${photos.files.length}: ${file.name}...` })
+        const b64 = await readB64(file)
+        const uploadRes = await uploadEvidenceAction(b64, file.name, folderPath)
+        
+        if (uploadRes.success && uploadRes.url) {
+          const { name, date } = parsePhotoName(file.name)
+          evidenceMetadata.push({
+            fileName: file.name,
+            url: uploadRes.url,
+            matchedName: name,
+            matchedDate: date
+          })
+        }
+      }
+      updateStep(2, { status: 'done', detail: `${evidenceMetadata.length} photos uploaded and mapped` })
 
-      updateStep(3, { status: 'running' })
-      const result = await runOtVerification(attendance.base64, claims.base64, template.base64)
-      updateStep(3, { status: 'done', detail: `${result.summary.totalEmployees} employees · ${result.summary.totalClaimedDays} claimed days processed` })
+      // Step 3: Conflicts
+      updateStep(3, { status: 'running' }); await delay(200)
+      updateStep(3, { status: 'done' })
 
-      updateStep(4, { status: 'running' }); await delay(200)
-      updateStep(4, { status: 'done', detail: '5-sheet workbook ready' })
+      // Step 4: Verification
+      updateStep(4, { status: 'running' })
+      const result = await runOtVerification(attendance.base64, claims.base64, template.base64, evidenceMetadata)
+      updateStep(4, { status: 'done', detail: `${result.summary.totalEmployees} employees · ${result.summary.totalClaimedDays} claimed days processed` })
+
+      // Step 5: Output
+      updateStep(5, { status: 'running' }); await delay(200)
+      updateStep(5, { status: 'done', detail: '5-sheet workbook ready' })
 
       setOutputB64(result.outputBase64)
-      setSummary(result.summary)
+      setSummary({ ...result.summary, photoCount: evidenceMetadata.length })
       if (result.errors.length) setErrors(result.errors)
     } catch (e: any) {
       const failIdx = steps.findIndex(s => s.status === 'running')
-      updateStep(failIdx >= 0 ? failIdx : 3, { status: 'error' })
+      updateStep(failIdx >= 0 ? failIdx : 4, { status: 'error' })
       setGlobalError(e.message ?? 'Verification failed.')
     } finally {
       setRunning(false)
@@ -167,6 +240,7 @@ export default function OtVerificationPage() {
     setAttendance({ state: 'idle', file: null, base64: null })
     setClaims({ state: 'idle', file: null, base64: null })
     setTemplate({ state: 'idle', file: null, base64: null })
+    setPhotos({ state: 'idle', files: [] })
     setSteps(STEPS.map(s => ({ ...s, status: 'pending' })))
     setOutputB64(null); setSummary(null); setErrors([]); setGlobalError(null); setRunning(false)
   }
@@ -200,27 +274,21 @@ export default function OtVerificationPage() {
           <div>
             <p className="text-[11px] text-neutral-500 uppercase tracking-widest font-semibold mb-1">On3oard Pte Ltd · PNH Group · Hard Services</p>
             <h2 className="text-2xl font-bold text-neutral-100 tracking-tight">DST & Minor OT Allowance Verification</h2>
-            <p className="text-sm text-neutral-500 mt-1">Validate DST and MINOR OT allowance claims against attendance timesheets for PNHR, PFS, and GM companies. All processing happens in your browser — no data is uploaded.</p>
+            <p className="text-sm text-neutral-500 mt-1">Validate DST and MINOR OT allowance claims against attendance timesheets for PNHR, PFS, and GM companies. Includes automated photo evidence matching.</p>
           </div>
 
           {/* Upload Panel */}
           <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 flex flex-col gap-5">
             <div className="flex items-center justify-between">
-              <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest">Step 1 — Upload 3 Files</p>
-              <p className="text-[10px] text-neutral-600">{[attendance, claims, template].filter(f => f.state === 'ready').length}/3 files ready</p>
+              <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest">Step 1 — Upload Required Files & Photos</p>
+              <p className="text-[10px] text-neutral-600">{[attendance, claims, template].filter(f => f.state === 'ready').length}/3 files ready · {photos.files.length} photos</p>
             </div>
 
-            {/* Info boxes */}
-            <div className="grid grid-cols-3 gap-2 text-[10px] text-neutral-500">
-              <div className="bg-neutral-800/40 rounded-lg p-2"><span className="font-semibold text-neutral-400 block mb-0.5">File A</span>Attandance April-3companies.xlsx</div>
-              <div className="bg-neutral-800/40 rounded-lg p-2"><span className="font-semibold text-neutral-400 block mb-0.5">File B</span>MINOR & DST Attanance April 2026-manager.xlsx</div>
-              <div className="bg-neutral-800/40 rounded-lg p-2"><span className="font-semibold text-neutral-400 block mb-0.5">File C</span>DST_OT_Allowance_April_2026_-CHATGPT_blank.xlsx</div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              <UploadZone slot="attendance" label="File A — Attendance Data (HR Export)" hint="Attandance April-3companies.xlsx · 3 company sheets" color="blue" fileSlot={attendance} onFile={f => handleFile(f, 'attendance')} />
-              <UploadZone slot="claims" label="File B — Manager Claim Namelists" hint="MINOR & DST Attanance April 2026-manager.xlsx" color="amber" fileSlot={claims} onFile={f => handleFile(f, 'claims')} />
-              <UploadZone slot="template" label="File C — Output Template (Blank)" hint="DST_OT_Allowance_April_2026_-CHATGPT_blank.xlsx" color="emerald" fileSlot={template} onFile={f => handleFile(f, 'template')} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <UploadZone slot="attendance" label="File A — Attendance Data" hint="Attandance April-3companies.xlsx" color="blue" fileSlot={attendance} onFile={f => handleFile(f, 'attendance')} />
+              <UploadZone slot="claims" label="File B — Manager Claims" hint="MINOR & DST Attanance April.xlsx" color="amber" fileSlot={claims} onFile={f => handleFile(f, 'claims')} />
+              <UploadZone slot="template" label="File C — Blank Template" hint="DST_OT_Allowance_blank.xlsx" color="emerald" fileSlot={template} onFile={f => handleFile(f, 'template')} />
+              <UploadZone slot="photos" label="Evidence Photos" hint="Upload all site photos (Name_MM-DD.jpg)" color="indigo" fileSlot={photos} onFile={f => handleFile(f, 'photos')} multiple={true} />
             </div>
 
             {globalError && (
@@ -257,9 +325,10 @@ export default function OtVerificationPage() {
                 {running && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                 {running ? 'Verifying…' : 'Run Verification'}
               </button>
-              {(attendance.file || claims.file || template.file) && (
+              {(attendance.file || claims.file || template.file || photos.files.length > 0) && (
                 <button onClick={handleReset} disabled={running}
-                  className="px-4 py-2.5 rounded-xl text-sm font-medium text-neutral-400 hover:text-neutral-200 border border-neutral-800 hover:border-neutral-700 disabled:opacity-40 transition-all duration-150">
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium text-neutral-400 hover:text-neutral-200 border border-neutral-800 hover:border-neutral-700 disabled:opacity-40 transition-all duration-150"
+                >
                   Reset
                 </button>
               )}
@@ -279,7 +348,7 @@ export default function OtVerificationPage() {
                   <StatCard value={`$${summary.totalOriginalAmount}`} label="Original Amount" />
                   <StatCard value={`$${summary.totalCalculatedAmount}`} label="Calculated Amount" color="emerald" />
                   <StatCard value={`$${summary.netDifference}`} label="Net Difference" color={netColor} />
-                  <StatCard value={summary.conflictCount} label="DST vs MINOR Conflicts" color="amber" />
+                  <StatCard value={summary.photoCount || 0} label="Evidence Photos Linked" color="blue" />
                 </div>
               </div>
 
@@ -289,16 +358,9 @@ export default function OtVerificationPage() {
                   <p className="text-lg font-bold font-mono text-red-400">{summary.exceptionCount}</p>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <p className="text-[10px] text-neutral-500 uppercase tracking-widest">Split Clocking Detected</p>
-                  <p className="text-lg font-bold font-mono text-blue-400">{summary.splitClockingCount}</p>
+                  <p className="text-[10px] text-neutral-500 uppercase tracking-widest">Conflicts Resolved</p>
+                  <p className="text-lg font-bold font-mono text-amber-400">{summary.conflictCount}</p>
                 </div>
-              </div>
-
-              {/* Output sheets info */}
-              <div className="flex flex-wrap gap-2">
-                {['DST OT-NAMELIST','OT_ALLOWANCE_SUMMARY','OT_DETAIL_CHECK','CONFLICT_REPORT','EXCEPTION_REPORT'].map(s => (
-                  <span key={s} className="px-2 py-1 rounded-md bg-neutral-800 text-[10px] text-neutral-400 font-mono">{s}</span>
-                ))}
               </div>
 
               <button id="btn-download-ot" onClick={handleDownload}
@@ -309,12 +371,9 @@ export default function OtVerificationPage() {
 
               {errors.length > 0 && (
                 <div className="flex flex-col gap-1 max-h-32 overflow-y-auto p-2 bg-black/20 rounded border border-neutral-800">
-                  <p className="text-[10px] text-neutral-500 font-semibold uppercase tracking-widest mb-1">Processing Notes</p>
                   {errors.map((e, i) => <p key={i} className="text-[10px] text-yellow-400">⚠ {e}</p>)}
                 </div>
               )}
-
-              <p className="text-[10px] text-neutral-600 text-center">All data processed in-browser. No PII transmitted. PDPA-compliant.</p>
             </div>
           )}
 

@@ -51,6 +51,14 @@ export interface EligibilityResult {
   nextDayIn: string | null
   remark: string
   empCode: string
+  evidenceUrl?: string
+}
+
+export interface ImageMetadata {
+  fileName: string
+  url: string
+  matchedName: string
+  matchedDate: string // YYYY-MM-DD
 }
 
 export interface ConflictRow {
@@ -279,7 +287,8 @@ export function checkEligibility(
   empName: string,
   claimDate: string,
   attendanceDict: Record<string, Record<string, Record<string, TimeRecord[]>>>,
-  empInfo: Record<string, EmpInfo>
+  empInfo: Record<string, EmpInfo>,
+  evidenceList: ImageMetadata[] = []
 ): EligibilityResult {
   let info = empInfo[empCode]
 
@@ -296,6 +305,12 @@ export function checkEligibility(
   if (!info) {
     return { eligible: false, allowance: 0, nightIn: null, nightOut: null, nightCheck: 'FAIL', dayShiftCheck: 'FAIL', nextDayCheck: 'FAIL', nextDayIn: null, remark: 'No timesheet record found', empCode }
   }
+
+  // Look for matching evidence
+  const evidence = evidenceList.find(img => {
+    const nameMatch = similarity(info.name, img.matchedName) >= 85
+    return nameMatch && img.matchedDate === claimDate
+  })
 
   const comp = info.company
   const nextDate = addDay(claimDate)
@@ -373,7 +388,7 @@ export function checkEligibility(
     else if (nextDayCheck === 'FAIL') remark = 'No next-day attendance'
   }
 
-  return { eligible, allowance, nightIn, nightOut, nightCheck, dayShiftCheck, nextDayCheck, nextDayIn, remark, empCode }
+  return { eligible, allowance, nightIn, nightOut, nightCheck, dayShiftCheck, nextDayCheck, nextDayIn, remark, empCode, evidenceUrl: evidence?.url }
 }
 
 // ─── Phase 6 & 7: Build + Write Excel Output ──────────────────────────────────
@@ -446,7 +461,7 @@ export function buildAndWriteOutput(
   XLSX.utils.sheet_add_aoa(ws2, summaryRows, { origin: 'A2' })
 
   // ── Sheet 3: OT_DETAIL_CHECK
-  const ws3 = wb.Sheets['OT_DETAIL_CHECK'] ?? XLSX.utils.aoa_to_sheet([['S.No','Emp Code','Name','Company','Type','Date','Day','Original','Calculated','Allowance','Night Time In','Night Time Out','Night Check','Same-Day Day Shift','Next Day Record','Next Day Earliest In','Remark','Difference']])
+  const ws3 = wb.Sheets['OT_DETAIL_CHECK'] ?? XLSX.utils.aoa_to_sheet([['S.No','Emp Code','Name','Company','Type','Date','Day','Original','Calculated','Allowance','Night Time In','Night Time Out','Night Check','Same-Day Day Shift','Next Day Record','Next Day Earliest In','Remark','Difference', 'Photo Evidence']])
   if (!wb.Sheets['OT_DETAIL_CHECK']) wb.Sheets['OT_DETAIL_CHECK'] = ws3
 
   const detailRows: any[][] = allClaims.map((c, i) => {
@@ -457,7 +472,8 @@ export function buildAndWriteOutput(
       i + 1, c.result.empCode || c.empCode, c.name, info?.company ?? '', info?.isDriver ? 'Driver' : 'Normal',
       c.date, days[d.getUTCDay()], 1, c.result.eligible ? 1 : 0, c.result.allowance,
       c.result.nightIn, c.result.nightOut, c.result.nightCheck, c.result.dayShiftCheck,
-      c.result.nextDayCheck, c.result.nextDayIn, c.result.remark, (c.result.eligible ? 1 : 0) - 1
+      c.result.nextDayCheck, c.result.nextDayIn, c.result.remark, (c.result.eligible ? 1 : 0) - 1,
+      c.result.evidenceUrl ? { t: 's', v: 'View Photo', l: { Target: c.result.evidenceUrl, Tooltip: 'Click to view photo evidence' } } : 'No Photo'
     ]
   })
   XLSX.utils.sheet_add_aoa(ws3, detailRows, { origin: 'A2' })
@@ -487,7 +503,8 @@ export function buildAndWriteOutput(
 export async function runOtVerification(
   attendanceB64: string,
   claimsB64: string,
-  templateB64: string
+  templateB64: string,
+  evidencePhotos: { fileName: string; url: string; matchedName: string; matchedDate: string }[] = []
 ): Promise<VerificationResult> {
   const errors: string[] = []
 
@@ -507,7 +524,7 @@ export async function runOtVerification(
 
   const enriched = allClaims.map(claim => {
     try {
-      const result = checkEligibility(claim.empCode, claim.name, claim.date, attendanceDict, empInfo)
+      const result = checkEligibility(claim.empCode, claim.name, claim.date, attendanceDict, empInfo, evidencePhotos)
       if (result.remark.includes('Split Clocking')) splitClockingCount++
       if (result.remark.includes('After 5AM')) after5amCount++
       if (result.remark.includes('No timesheet record found')) {
