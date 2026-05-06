@@ -206,7 +206,8 @@ function setCell(ws: XLSX.WorkSheet, r: number, c: number, v: any) {
 function fillAttendance(
   templateB64: string,
   resultMap: Record<string, Record<string, DayResult>>,
-  ptSet: Set<string>
+  ptSet: Set<string>,
+  targetYearMonth: string // e.g. '2026-04'
 ): string {
   const wb = XLSX.read(templateB64, { type: 'base64', cellStyles: true })
   const SHEETS = wb.SheetNames
@@ -229,8 +230,8 @@ function fillAttendance(
       let totalOt15 = 0
       let totalOt20 = 0
 
-      for (let day = 1; day <= 30; day++) {
-        const dateStr = `2026-04-${String(day).padStart(2, '0')}`
+      for (let day = 1; day <= 31; day++) {
+        const dateStr = `${targetYearMonth}-${String(day).padStart(2, '0')}`
         const dayData = empRes[dateStr]
         if (!dayData) continue
 
@@ -320,8 +321,14 @@ export async function runSoftServicesEngine(
     // 2. Calculate
     const { ptSet, resultMap, totalOt15, totalOt20Days, unclassified } = calcOt(byCode)
 
+    // Determine target Year-Month from the first valid record
+    let targetYearMonth = '2026-04'
+    if (records.length > 0 && records[0].date) {
+      targetYearMonth = records[0].date.substring(0, 7) // 'YYYY-MM'
+    }
+
     // 3. Build outputs
-    const attendanceBase64 = fillAttendance(attendanceBlankB64, resultMap, ptSet)
+    const attendanceBase64 = fillAttendance(attendanceBlankB64, resultMap, ptSet, targetYearMonth)
     const reportBase64 = fillOtReport(otReportB64, byCode, resultMap, ptSet)
 
     return {
