@@ -1,273 +1,348 @@
-// Soft Services OT Logic Engine
-import * as XLSX from 'xlsx';
+// Soft Services OT Engine — runs entirely in the browser using SheetJS
+// Fixes: ExcelJS edge-runtime corruption, wrong column indexing
+import * as XLSX from 'xlsx'
 
 // --- Constants ---
-export const PUBLIC_HOLIDAYS_2026 = ['2026-04-03']; // Good Friday
+export const PUBLIC_HOLIDAYS_2026: Record<string, string> = {
+  '2026-04-03': 'Good Friday'
+}
 
-export const SHIFT_1_WINDOW = { start: '06:00', end: '08:59', in: '07:00', out: '16:30', wd_thresh: '17:00', sat_thresh: '13:30' };
-export const SHIFT_2_WINDOW = { start: '09:00', end: '11:59', in: '10:00', out: '19:00', wd_thresh: '19:30', sat_thresh: '15:00' };
-export const SHIFT_3_SAT = { start: '12:00', end: '14:00', in: '12:00', out: '16:00' };
-
-// --- Types ---
 export interface TimeRecord {
-  code: string;
-  name: string;
-  group: string;
-  date: string; // YYYY-MM-DD
-  timeIn: string | null; // HH:mm
-  timeOut: string | null; // HH:mm
-  dayType: 'WEEKDAY' | 'SATURDAY' | 'OFF DAY' | 'PH';
+  code: string
+  name: string
+  group: string
+  date: string  // YYYY-MM-DD
+  timeIn: string | null   // HH:mm
+  timeOut: string | null  // HH:mm
+  dayType: 'WEEKDAY' | 'SATURDAY' | 'OFF DAY' | 'PH'
 }
 
-export interface ProcessedDay {
-  in: string | null;
-  out: string | null;
-  ot15: number;
-  ot20_days: number;
-  ot20_hrs: number;
-  shift: string | null;
-  isPt: boolean;
+export interface DayResult {
+  in: string | null
+  out: string | null
+  ot15: number        // OT 1.5x hours
+  ot20days: number    // OT 2.0x days (0.5 or 1.0)
+  ot20hrs: number     // Additional OT 2.0x hours beyond 8h worked
+  shift: string | null
+  isPt: boolean
 }
 
-export interface ProcessingResult {
-  employees: Record<string, ProcessedDay[]>;
+export interface SoftServicesOutput {
+  attendanceBase64: string
+  reportBase64: string
   summary: {
-    totalEmployees: number;
-    totalPt: number;
-    unclassifiedShifts: number;
-    totalOt15: number;
-    totalOt20Days: number;
-  };
+    totalEmployees: number
+    totalPt: number
+    unclassifiedShifts: number
+    totalOt15: number
+    totalOt20Days: number
+  }
+  errors: string[]
 }
 
-// --- Utilities ---
-function timeToMins(t: string | null): number | null {
-  if (!t) return null;
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
+// ---------- helpers ----------
+function parseDate(rawDate: any): string {
+  if (!rawDate) return ''
+  if (rawDate instanceof Date) return rawDate.toISOString().slice(0, 10)
+  const s = String(rawDate).trim()
+  // DD/MM/YYYY
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
+  // YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  // Excel serial
+  if (!isNaN(Number(rawDate))) {
+    const d = XLSX.SSF.parse_date_code(Number(rawDate))
+    if (d) return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
+  }
+  return ''
 }
 
-function minsToTime(m: number | null): string | null {
-  if (m === null) return null;
-  const h = Math.floor(m / 60);
-  const mins = m % 60;
-  return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+function getDayType(dateStr: string): TimeRecord['dayType'] {
+  if (PUBLIC_HOLIDAYS_2026[dateStr]) return 'PH'
+  const d = new Date(dateStr + 'T00:00:00Z')
+  const dow = d.getUTCDay()  // 0=Sun, 6=Sat
+  if (dow === 0) return 'OFF DAY'
+  if (dow === 6) return 'SATURDAY'
+  return 'WEEKDAY'
 }
 
-export function getDayType(dateStr: string): 'WEEKDAY' | 'SATURDAY' | 'OFF DAY' | 'PH' {
-  if (PUBLIC_HOLIDAYS_2026.includes(dateStr)) return 'PH';
-  const d = new Date(dateStr);
-  const day = d.getDay(); // 0 = Sunday, 6 = Saturday
-  if (day === 0) return 'OFF DAY';
-  if (day === 6) return 'SATURDAY';
-  return 'WEEKDAY';
+function toMins(t: string | null): number | null {
+  if (!t) return null
+  const m = String(t).match(/^(\d{1,2}):(\d{2})/)
+  if (!m) return null
+  return parseInt(m[1]) * 60 + parseInt(m[2])
 }
 
-export function calculateOt(records: TimeRecord[]): ProcessingResult {
-  const empMap: Record<string, TimeRecord[]> = {};
-  records.forEach(r => {
-    if (!empMap[r.code]) empMap[r.code] = [];
-    empMap[r.code].push(r);
-  });
+function floorHalf(hrs: number): number {
+  return Math.floor(hrs * 2) / 2
+}
 
-  const ptEmployees = new Set<string>();
-  const results: Record<string, Record<string, ProcessedDay>> = {};
-  
-  // 1. PT Detection
-  for (const [code, empRecords] of Object.entries(empMap)) {
-    let totalHrs = 0;
-    let maxHrs = 0;
-    let shiftMatch = false;
-    
-    empRecords.forEach(r => {
-      if (r.timeIn && r.timeOut) {
-        const inMins = timeToMins(r.timeIn)!;
-        const outMins = timeToMins(r.timeOut)!;
-        const hrs = (outMins - inMins) / 60;
-        totalHrs += hrs;
-        if (hrs > maxHrs) maxHrs = hrs;
-        
-        if ((inMins >= 6 * 60 && inMins <= 8 * 60 + 59) || 
-            (inMins >= 9 * 60 && inMins <= 11 * 60 + 59)) {
-          shiftMatch = true;
-        }
-      }
-    });
-    
-    const avgHrs = totalHrs / empRecords.length;
-    if (avgHrs <= 5.5 && maxHrs <= 7.0 && !shiftMatch) {
-      ptEmployees.add(code);
+// ---------- parse time sheet ----------
+function parseTimeSheet(b64: string): { records: TimeRecord[]; byCode: Record<string, TimeRecord[]> } {
+  const wb = XLSX.read(b64, { type: 'base64' })
+  const ws = wb.Sheets['EmployeeAttendance']
+  if (!ws) throw new Error('Sheet "EmployeeAttendance" not found in Time Sheet')
+
+  const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null }) as any[][]
+  const hdr = (rows[0] || []).map((h: any) => String(h || '').trim())
+  const col = (name: string) => hdr.indexOf(name)
+
+  const records: TimeRecord[] = []
+  const byCode: Record<string, TimeRecord[]> = {}
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i]
+    if (!row[col('Employee Code')]) continue
+    const code = String(row[col('Employee Code')]).trim()
+    const dateStr = parseDate(row[col('Date')])
+    if (!dateStr) continue
+    const rec: TimeRecord = {
+      code,
+      name: String(row[col('Employee Name')] || ''),
+      group: String(row[col('Working Group')] || ''),
+      date: dateStr,
+      timeIn: row[col('Time In')] ? String(row[col('Time In')]).trim() : null,
+      timeOut: row[col('Time Out')] ? String(row[col('Time Out')]).trim() : null,
+      dayType: getDayType(dateStr)
     }
+    records.push(rec)
+    if (!byCode[code]) byCode[code] = []
+    byCode[code].push(rec)
+  }
+  return { records, byCode }
+}
+
+// ---------- OT calculation ----------
+function calcOt(byCode: Record<string, TimeRecord[]>): {
+  ptSet: Set<string>
+  resultMap: Record<string, Record<string, DayResult>>
+  totalOt15: number
+  totalOt20Days: number
+  unclassified: number
+} {
+  const ptSet = new Set<string>()
+  
+  // Part-time detection
+  for (const [code, recs] of Object.entries(byCode)) {
+    let total = 0, max = 0, shiftMatch = false
+    for (const r of recs) {
+      if (r.timeIn && r.timeOut) {
+        const hrs = (toMins(r.timeOut)! - toMins(r.timeIn)!) / 60
+        total += hrs
+        if (hrs > max) max = hrs
+        const inM = toMins(r.timeIn)!
+        if ((inM >= 360 && inM <= 539) || (inM >= 540 && inM <= 719)) shiftMatch = true
+      }
+    }
+    const avg = total / recs.length
+    if (avg <= 5.5 && max <= 7.0 && !shiftMatch) ptSet.add(code)
   }
 
-  // 2. OT Calculation
-  let unclassifiedCount = 0;
-  let totalOt15 = 0;
-  let totalOt20Days = 0;
+  const resultMap: Record<string, Record<string, DayResult>> = {}
+  let totalOt15 = 0, totalOt20Days = 0, unclassified = 0
 
-  for (const [code, empRecords] of Object.entries(empMap)) {
-    results[code] = {};
-    const isPt = ptEmployees.has(code);
-    
-    empRecords.forEach(r => {
-      const dayRes: ProcessedDay = {
-        in: r.timeIn,
-        out: r.timeOut,
-        ot15: 0,
-        ot20_days: 0,
-        ot20_hrs: 0,
-        shift: null,
-        isPt
-      };
+  for (const [code, recs] of Object.entries(byCode)) {
+    resultMap[code] = {}
+    const isPt = ptSet.has(code)
+
+    for (const r of recs) {
+      const res: DayResult = { in: r.timeIn, out: r.timeOut, ot15: 0, ot20days: 0, ot20hrs: 0, shift: null, isPt }
 
       if (r.timeIn && r.timeOut && !isPt) {
-        const inMins = timeToMins(r.timeIn)!;
-        const outMins = timeToMins(r.timeOut)!;
-        
-        let shift = null;
-        let thresh = null;
+        const inM = toMins(r.timeIn)!
+        const outM = toMins(r.timeOut)!
+        let shift = null, thresh = 0
 
-        if (inMins >= 6 * 60 && inMins <= 8 * 60 + 59) {
-          shift = 'SHIFT 1';
-          thresh = (r.dayType === 'SATURDAY') ? SHIFT_1_WINDOW.sat_thresh : SHIFT_1_WINDOW.wd_thresh;
-        } else if (inMins >= 9 * 60 && inMins <= 11 * 60 + 59) {
-          shift = 'SHIFT 2';
-          thresh = (r.dayType === 'SATURDAY') ? SHIFT_2_WINDOW.sat_thresh : SHIFT_2_WINDOW.wd_thresh;
-        } else if (r.dayType === 'SATURDAY' && inMins >= 12 * 60 && inMins <= 14 * 60) {
-          shift = 'SHIFT 3';
+        if (inM >= 360 && inM <= 539) {        // 06:00–08:59 → Shift 1
+          shift = 'SHIFT 1'
+          thresh = r.dayType === 'SATURDAY' ? 13 * 60 + 30 : 17 * 60
+        } else if (inM >= 540 && inM <= 719) { // 09:00–11:59 → Shift 2
+          shift = 'SHIFT 2'
+          thresh = r.dayType === 'SATURDAY' ? 15 * 60 : 19 * 60 + 30
+        } else if (r.dayType === 'SATURDAY' && inM >= 720 && inM <= 840) { // 12:00–14:00 Sat
+          shift = 'SHIFT 3'
         }
 
-        dayRes.shift = shift;
+        res.shift = shift
 
         if (shift === 'SHIFT 1' || shift === 'SHIFT 2') {
           if (r.dayType === 'WEEKDAY' || r.dayType === 'SATURDAY') {
-            const threshMins = timeToMins(thresh)!;
-            const otHrs = (outMins - threshMins) / 60;
-            if (otHrs >= 0.5) {
-              dayRes.ot15 = Math.floor(otHrs * 2) / 2;
-              totalOt15 += dayRes.ot15;
-            }
-          } else if (r.dayType === 'OFF DAY' || r.dayType === 'PH') {
-            const workedHrs = (outMins - inMins) / 60;
-            if (workedHrs <= 4.0) dayRes.ot20_days = 0.5;
-            else if (workedHrs <= 8.0) dayRes.ot20_days = 1.0;
-            else {
-              dayRes.ot20_days = 1.0;
-              dayRes.ot20_hrs = Math.floor((workedHrs - 8) * 2) / 2;
-            }
-            totalOt20Days += dayRes.ot20_days;
+            const otHrs = (outM - thresh) / 60
+            if (otHrs >= 0.5) { res.ot15 = floorHalf(otHrs); totalOt15 += res.ot15 }
+          } else {
+            const worked = (outM - inM) / 60
+            if (worked <= 4) res.ot20days = 0.5
+            else if (worked <= 8) res.ot20days = 1.0
+            else { res.ot20days = 1.0; res.ot20hrs = floorHalf(worked - 8) }
+            totalOt20Days += res.ot20days
           }
         } else if (!shift) {
-          unclassifiedCount++;
+          unclassified++
         }
       }
-      results[code][r.date] = dayRes;
-    });
-  }
-
-  // Convert map to array format for final output if needed
-  const finalResults: Record<string, ProcessedDay[]> = {};
-  for (const [code, dayMap] of Object.entries(results)) {
-    finalResults[code] = Object.values(dayMap);
-  }
-
-  return {
-    employees: finalResults, // Simplified for now, we'll probably need date keys
-    summary: {
-      totalEmployees: Object.keys(empMap).length,
-      totalPt: ptEmployees.size,
-      unclassifiedShifts: unclassifiedCount,
-      totalOt15,
-      totalOt20Days
+      resultMap[code][r.date] = res
     }
-  };
+  }
+
+  return { ptSet, resultMap, totalOt15, totalOt20Days, unclassified }
 }
 
-// Full version with date keys for template mapping
-export function processSoftServicesData(records: TimeRecord[]): { 
-  resultsByDate: Record<string, Record<string, ProcessedDay>>,
-  summary: any
-} {
-  const result = calculateOt(records);
-  
-  // Re-map to emp -> date for easier Excel injection
-  const resultsByDate: Record<string, Record<string, ProcessedDay>> = {};
-  records.forEach(r => {
-    if (!resultsByDate[r.code]) resultsByDate[r.code] = {};
-    // We already calculated it in calculateOt, but let's just re-organize the data structure
-  });
+// ---------- fill attendance template using SheetJS ----------
+// Template column layout (0-indexed):
+//   col 2 = Employee Code, col 3 = Name
+//   col 7 = April-1 IN, col 8 = April-1 OUT
+//   col 9 = April-2 IN, col 10 = April-2 OUT
+//   Formula: April day D → IN col = 7 + (D-1)*2, OUT col = 8 + (D-1)*2
+//   OT 1.5 row (r+1): individual day OT at same IN cols; total at col 6
+//   OT 2.0 row (r+2): same
 
-  // Re-calculating in a way that preserves the date key
-  const ptEmployees = new Set<string>();
-  const empGroups: Record<string, TimeRecord[]> = {};
-  records.forEach(r => {
-    if (!empGroups[r.code]) empGroups[r.code] = [];
-    empGroups[r.code].push(r);
-  });
+function setCell(ws: XLSX.WorkSheet, r: number, c: number, v: any) {
+  const addr = XLSX.utils.encode_cell({ r, c })
+  const t = typeof v === 'number' ? 'n' : 's'
+  ws[addr] = { v, t }
+}
 
-  // PT Detection (same as above)
-  for (const [code, empRecs] of Object.entries(empGroups)) {
-    let totalHrs = 0; let maxHrs = 0; let shiftMatch = false;
-    empRecs.forEach(r => {
-      if (r.timeIn && r.timeOut) {
-        const inMins = timeToMins(r.timeIn)!;
-        const outMins = timeToMins(r.timeOut)!;
-        const hrs = (outMins - inMins) / 60;
-        totalHrs += hrs; if (hrs > maxHrs) maxHrs = hrs;
-        if ((inMins >= 6 * 60 && inMins <= 8 * 60 + 59) || (inMins >= 9 * 60 && inMins <= 11 * 60 + 59)) shiftMatch = true;
-      }
-    });
-    if (totalHrs / empRecs.length <= 5.5 && maxHrs <= 7.0 && !shiftMatch) ptEmployees.add(code);
-  }
+function fillAttendance(
+  templateB64: string,
+  resultMap: Record<string, Record<string, DayResult>>,
+  ptSet: Set<string>
+): string {
+  const wb = XLSX.read(templateB64, { type: 'base64', cellStyles: true })
+  const SHEETS = ['GEY', 'TPY', 'AMK', 'HOUGANG', 'SERANGOON']
 
-  const finalMap: Record<string, Record<string, ProcessedDay>> = {};
-  let totalOt15 = 0;
-  let totalOt20Days = 0;
-  let unclassified = 0;
+  for (const sheetName of SHEETS) {
+    const ws = wb.Sheets[sheetName]
+    if (!ws) continue
 
-  for (const [code, empRecs] of Object.entries(empGroups)) {
-    finalMap[code] = {};
-    const isPt = ptEmployees.has(code);
-    empRecs.forEach(r => {
-      const res: ProcessedDay = { in: r.timeIn, out: r.timeOut, ot15: 0, ot20_days: 0, ot20_hrs: 0, shift: null, isPt };
-      if (r.timeIn && r.timeOut && !isPt) {
-        const inMins = timeToMins(r.timeIn)!;
-        const outMins = timeToMins(r.timeOut)!;
-        let shift = null; let thresh = null;
-        if (inMins >= 6 * 60 && inMins <= 8 * 60 + 59) {
-          shift = 'SHIFT 1'; thresh = (r.dayType === 'SATURDAY') ? SHIFT_1_WINDOW.sat_thresh : SHIFT_1_WINDOW.wd_thresh;
-        } else if (inMins >= 9 * 60 && inMins <= 11 * 60 + 59) {
-          shift = 'SHIFT 2'; thresh = (r.dayType === 'SATURDAY') ? SHIFT_2_WINDOW.sat_thresh : SHIFT_2_WINDOW.wd_thresh;
-        } else if (r.dayType === 'SATURDAY' && inMins >= 12 * 60 && inMins <= 14 * 60) {
-          shift = 'SHIFT 3';
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1')
+
+    for (let r = 5; r <= range.e.r; r++) { // 0-indexed row 5 = Excel row 6
+      const codeAddr = XLSX.utils.encode_cell({ r, c: 2 }) // col C
+      const codeCell = ws[codeAddr]
+      if (!codeCell?.v) continue
+
+      const empCode = String(codeCell.v).trim()
+      const empRes = resultMap[empCode]
+      if (!empRes) continue
+
+      let totalOt15 = 0
+      let totalOt20 = 0
+
+      for (let day = 1; day <= 30; day++) {
+        const dateStr = `2026-04-${String(day).padStart(2, '0')}`
+        const dayData = empRes[dateStr]
+        if (!dayData) continue
+
+        const inCol = 7 + (day - 1) * 2   // 0-indexed
+        const outCol = inCol + 1
+
+        if (dayData.in) setCell(ws, r, inCol, dayData.in)
+        if (dayData.out) setCell(ws, r, outCol, dayData.out)
+
+        if (dayData.ot15 > 0) {
+          setCell(ws, r + 1, inCol, dayData.ot15)
+          totalOt15 += dayData.ot15
         }
-        res.shift = shift;
-        if (shift === 'SHIFT 1' || shift === 'SHIFT 2') {
-          if (r.dayType === 'WEEKDAY' || r.dayType === 'SATURDAY') {
-            const threshMins = timeToMins(thresh)!;
-            const otHrs = (outMins - threshMins) / 60;
-            if (otHrs >= 0.5) { res.ot15 = Math.floor(otHrs * 2) / 2; totalOt15 += res.ot15; }
-          } else {
-            const worked = (outMins - inMins) / 60;
-            if (worked <= 4.0) res.ot20_days = 0.5;
-            else if (worked <= 8.0) res.ot20_days = 1.0;
-            else { res.ot20_days = 1.0; res.ot20_hrs = Math.floor((worked - 8) * 2) / 2; }
-            totalOt20Days += res.ot20_days;
-          }
-        } else if (!shift) unclassified++;
+        if (dayData.ot20days > 0) {
+          const val = dayData.ot20hrs > 0 ? `${dayData.ot20days}d ${dayData.ot20hrs}h` : dayData.ot20days
+          setCell(ws, r + 2, inCol, val)
+          totalOt20 += dayData.ot20days
+        }
       }
-      finalMap[code][r.date] = res;
-    });
+
+      // Write totals at col 6 (column G)
+      if (totalOt15 > 0) setCell(ws, r + 1, 6, totalOt15)
+      if (totalOt20 > 0) setCell(ws, r + 2, 6, totalOt20)
+    }
   }
 
-  return {
-    resultsByDate: finalMap,
-    summary: {
-      totalEmployees: Object.keys(empGroups).length,
-      totalPt: ptEmployees.size,
-      unclassifiedShifts: unclassified,
-      totalOt15,
-      totalOt20Days
+  return XLSX.write(wb, { type: 'base64', bookType: 'xlsx' })
+}
+
+// ---------- fill OT checking report ----------
+function fillOtReport(
+  reportB64: string,
+  byCode: Record<string, TimeRecord[]>,
+  resultMap: Record<string, Record<string, DayResult>>,
+  ptSet: Set<string>
+): string {
+  const wb = XLSX.read(reportB64, { type: 'base64', cellStyles: true })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  if (!ws) return reportB64
+
+  // Fill colors via cell fill — SheetJS pro only, so we add a note column instead
+  let rowIdx = 1 // 0-indexed row 1 = Excel row 2
+
+  for (const [code, recs] of Object.entries(byCode)) {
+    const empRes = resultMap[code]
+    let ot15 = 0, offOt = 0, phOt = 0, hasUnclassified = false
+    const isPt = ptSet.has(code)
+
+    for (const [date, d] of Object.entries(empRes)) {
+      ot15 += d.ot15
+      const dt = getDayType(date)
+      if (dt === 'OFF DAY') offOt += d.ot20days
+      if (dt === 'PH') phOt += d.ot20days
+      if (!d.shift && d.in && !d.isPt) hasUnclassified = true
     }
-  };
+
+    setCell(ws, rowIdx, 0, code)
+    setCell(ws, rowIdx, 1, recs[0].name)
+    setCell(ws, rowIdx, 3, recs[0].group)
+    setCell(ws, rowIdx, 4, ot15)     // Weekday OT (TS)
+    setCell(ws, rowIdx, 6, offOt)   // Off Day OT (TS)
+    setCell(ws, rowIdx, 8, phOt)    // PH OT (TS)
+
+    let note = 'Verified OK'
+    if (isPt) note = '[PART-TIME – NO OT]'
+    else if (hasUnclassified) note = 'Shift unclassified – manual review required'
+    setCell(ws, rowIdx, 10, note)
+
+    rowIdx++
+  }
+
+  return XLSX.write(wb, { type: 'base64', bookType: 'xlsx' })
+}
+
+// ---------- main entry point ----------
+export async function runSoftServicesEngine(
+  timeSheetB64: string,
+  attendanceBlankB64: string,
+  otReportB64: string
+): Promise<SoftServicesOutput> {
+  const errors: string[] = []
+
+  try {
+    // 1. Parse
+    const { records, byCode } = parseTimeSheet(timeSheetB64)
+
+    // 2. Calculate
+    const { ptSet, resultMap, totalOt15, totalOt20Days, unclassified } = calcOt(byCode)
+
+    // 3. Build outputs
+    const attendanceBase64 = fillAttendance(attendanceBlankB64, resultMap, ptSet)
+    const reportBase64 = fillOtReport(otReportB64, byCode, resultMap, ptSet)
+
+    return {
+      attendanceBase64,
+      reportBase64,
+      summary: {
+        totalEmployees: Object.keys(byCode).length,
+        totalPt: ptSet.size,
+        unclassifiedShifts: unclassified,
+        totalOt15,
+        totalOt20Days
+      },
+      errors
+    }
+  } catch (e: any) {
+    errors.push(e.message)
+    return {
+      attendanceBase64: '',
+      reportBase64: '',
+      summary: { totalEmployees: 0, totalPt: 0, unclassifiedShifts: 0, totalOt15: 0, totalOt20Days: 0 },
+      errors
+    }
+  }
 }
