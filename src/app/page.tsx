@@ -62,6 +62,24 @@ export default function HubDashboard() {
               </div>
             </Link>
 
+            <Link href="/soft-services" className="group block">
+              <div className="p-6 rounded-lg border border-blue-900/40 bg-blue-950/20 hover:bg-blue-900/20 hover:border-blue-800/60 transition-all cursor-pointer h-full flex flex-col">
+                <div className="w-10 h-10 rounded-md bg-blue-900/30 flex items-center justify-center mb-4 group-hover:bg-blue-900/50 transition-colors">
+                  <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                  </svg>
+                </div>
+                <h3 className="text-base font-medium text-neutral-200 mb-2">HR Soft Service (Cleaners) AI Automation</h3>
+                <p className="text-sm text-neutral-400 flex-1">
+                  Automate the NHGP monthly OT calculations for cleaners. Processes raw biometric logs into the official attendance template with automated shift & part-time detection.
+                </p>
+                <div className="mt-6 flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-400 text-[10px] font-semibold uppercase tracking-widest border border-blue-800/40">Soft Services</span>
+                  <span className="text-xs font-medium text-blue-600 uppercase tracking-wider ml-auto">Launch Tool &rarr;</span>
+                </div>
+              </div>
+            </Link>
+
           </div>
         </section>
       </div>
