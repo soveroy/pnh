@@ -7,6 +7,52 @@ export default function HubDashboard() {
     <LayoutContainer title="PNH AI Hub" showPdpaBadge={false}>
       <div className="flex flex-col gap-8 h-full">
         <section>
+          <h2 className="text-sm font-medium text-neutral-300 mb-4 uppercase tracking-wider">AI Workflow Demos</h2>
+          <div className="grid grid-cols-1 gap-6 mb-10">
+            <Link href="/morning-briefing" className="group block">
+              <div className="p-6 rounded-lg border border-emerald-900/40 bg-emerald-950/20 hover:bg-emerald-900/20 hover:border-emerald-800/60 transition-all cursor-pointer h-full flex flex-col md:flex-row gap-6 items-start md:items-center">
+                <div className="w-14 h-14 shrink-0 rounded-lg bg-emerald-900/30 flex items-center justify-center group-hover:bg-emerald-900/50 transition-colors">
+                  <svg className="w-7 h-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-medium text-neutral-100 mb-2">On3oard AI Morning Briefing Workflow</h3>
+                  <p className="text-sm text-neutral-400 max-w-2xl">
+                    Live demo of the 7:00 AM executive briefing. Aggregates data from Operations, Procurement, Safety, and HR into a single, actionable status report.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 mt-4 md:mt-0">
+                  <span className="px-3 py-1 rounded-full bg-emerald-900/40 text-emerald-400 text-[10px] font-semibold uppercase tracking-widest border border-emerald-800/40">New Demo</span>
+                  <span className="text-sm font-medium text-emerald-500 uppercase tracking-wider ml-4 group-hover:translate-x-1 transition-transform">View Briefing &rarr;</span>
+                </div>
+              </div>
+            </Link>
+          </div>
+
+          <h2 className="text-sm font-medium text-neutral-300 mb-4 uppercase tracking-wider">Management & Analytics</h2>
+          <div className="mb-10">
+            <Link href="/dashboard" className="group block">
+              <div className="p-6 rounded-lg border border-indigo-900/40 bg-indigo-950/20 hover:bg-indigo-900/20 hover:border-indigo-800/60 transition-all cursor-pointer h-full flex flex-col md:flex-row gap-6 items-start md:items-center">
+                <div className="w-14 h-14 shrink-0 rounded-lg bg-indigo-900/30 flex items-center justify-center group-hover:bg-indigo-900/50 transition-colors">
+                  <svg className="w-7 h-7 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-medium text-neutral-100 mb-2">PNH Group Management Dashboard</h3>
+                  <p className="text-sm text-neutral-400 max-w-2xl">
+                    Executive overview of the overnight ERP sync. Monitor cross-entity operations, AI-generated insights, HR reconciliation, safety compliance, and procurement matches.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 mt-4 md:mt-0">
+                  <span className="px-3 py-1 rounded-full bg-indigo-900/40 text-indigo-400 text-[10px] font-semibold uppercase tracking-widest border border-indigo-800/40">CEO View</span>
+                  <span className="text-sm font-medium text-indigo-500 uppercase tracking-wider ml-4 group-hover:translate-x-1 transition-transform">Enter Dashboard &rarr;</span>
+                </div>
+              </div>
+            </Link>
+          </div>
+
           <h2 className="text-sm font-medium text-neutral-300 mb-4 uppercase tracking-wider">Available Tools</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             

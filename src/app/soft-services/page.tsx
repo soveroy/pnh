@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { LayoutContainer } from '@/components/LayoutContainer'
-import { runSoftServicesEngine } from '@/utils/softServicesEngine'
+import { runSoftServicesEngine, SheetStatus } from '@/utils/softServicesEngine'
 
 export const runtime = 'edge'
 
@@ -12,6 +12,7 @@ interface FileSlot { file: File | null; base64: string | null }
 export default function SoftServicesPage() {
   const [timeSheet, setTimeSheet] = useState<FileSlot>({ file: null, base64: null })
   const [attendance, setAttendance] = useState<FileSlot>({ file: null, base64: null })
+  const [attendance2, setAttendance2] = useState<FileSlot>({ file: null, base64: null })
   const [report, setReport] = useState<FileSlot>({ file: null, base64: null })
 
   const [running, setRunning] = useState(false)
@@ -26,13 +27,14 @@ export default function SoftServicesPage() {
       r.readAsDataURL(file)
     })
 
-  const handleFile = useCallback(async (file: File, slot: 'ts' | 'att' | 'rep') => {
+  const handleFile = useCallback(async (file: File, slot: 'ts' | 'att' | 'att2' | 'rep') => {
     setError(null)
-    if (!file.name.match(/\.(xlsx|xls)$/i)) { setError('Only .xlsx / .xls files are accepted.'); return }
+    if (!file.name.match(/\.(xlsx|xls|xlsb)$/i)) { setError('Only .xlsx / .xls / .xlsb files are accepted.'); return }
     const b64 = await readB64(file)
     const s: FileSlot = { file, base64: b64 }
     if (slot === 'ts') setTimeSheet(s)
     else if (slot === 'att') setAttendance(s)
+    else if (slot === 'att2') setAttendance2(s)
     else setReport(s)
   }, [])
 
@@ -40,7 +42,9 @@ export default function SoftServicesPage() {
     if (!timeSheet.base64 || !attendance.base64 || !report.base64) return
     setRunning(true); setError(null); setResults(null)
     try {
-      const res = await runSoftServicesEngine(timeSheet.base64, attendance.base64, report.base64)
+      const attFiles = [attendance.base64]
+      if (attendance2.base64) attFiles.push(attendance2.base64)
+      const res = await runSoftServicesEngine(timeSheet.base64, attFiles, report.base64)
       if (res.errors.length && !res.attendanceBase64) {
         setError(res.errors[0])
       } else {
@@ -75,16 +79,20 @@ export default function SoftServicesPage() {
           </Link>
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold text-neutral-100 tracking-tight">NHGP Soft Services OT Automation</h2>
-            <span className="px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-400 text-[10px] font-semibold uppercase tracking-widest border border-blue-800/40">Cleaners</span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-400 text-[10px] font-semibold uppercase tracking-widest border border-blue-800/40">Cleaners · v2</span>
           </div>
-          <p className="text-sm text-neutral-400 max-w-2xl">Upload the three required files. All processing runs securely in your browser — no data is sent to any server.</p>
+          <p className="text-sm text-neutral-400 max-w-2xl">
+            Upload the three required files. All processing runs securely in your browser — no data is sent to any server.
+            Full 2025–2026 SG Public Holiday calendar applied automatically.
+          </p>
         </div>
 
         {/* Upload Zones */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <UploadZone label="1. Raw Time Sheet" file={timeSheet.file} onFile={f => handleFile(f, 'ts')} hint="NHGP TIME SHEET.xlsx" color="blue" />
-          <UploadZone label="2. Attendance Template" file={attendance.file} onFile={f => handleFile(f, 'att')} hint="NHGP ATTENDANCE 1_blank.xlsx" color="emerald" />
-          <UploadZone label="3. OT Checking Report" file={report.file} onFile={f => handleFile(f, 'rep')} hint="OT checking (1).xlsx" color="amber" />
+          <UploadZone label="2. Attendance 1" file={attendance.file} onFile={f => handleFile(f, 'att')} hint="NHGP ATTENDANCE 1.xlsx" color="emerald" />
+          <UploadZone label="3. Attendance 2 (Opt)" file={attendance2.file} onFile={f => handleFile(f, 'att2')} hint="NHGP ATTENDANCE 2.xlsb" color="emerald" />
+          <UploadZone label="4. OT Checking Report" file={report.file} onFile={f => handleFile(f, 'rep')} hint="OT checking (1).xlsx" color="amber" />
         </div>
 
         {/* Run Button */}
@@ -100,9 +108,9 @@ export default function SoftServicesPage() {
           </button>
 
           {error && (
-            <div className="flex items-start gap-2 px-4 py-3 rounded-xl border border-red-800/40 bg-red-900/10 max-w-sm w-full">
-              <svg className="w-4 h-4 text-red-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <p className="text-[11px] text-red-300 leading-relaxed">{error}</p>
+            <div className="flex items-start gap-2 px-4 py-3 rounded-xl border border-yellow-800/40 bg-yellow-900/10 max-w-lg w-full">
+              <svg className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <p className="text-[11px] text-yellow-300 leading-relaxed">{error}</p>
             </div>
           )}
         </div>
@@ -110,34 +118,103 @@ export default function SoftServicesPage() {
         {/* Results */}
         {results && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+
+            {/* Target Month Banner */}
+            {results.summary.targetMonth && (
+              <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-700 bg-neutral-900/60">
+                <svg className="w-4 h-4 text-neutral-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                <p className="text-xs text-neutral-300">
+                  Target month auto-detected: <span className="font-bold text-neutral-100">{results.summary.targetMonth}</span>
+                </p>
+              </div>
+            )}
+
+            {/* Summary Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <StatCard label="Employees" value={results.summary.totalEmployees} />
               <StatCard label="Part-Time" value={results.summary.totalPt} color="amber" />
               <StatCard label="Weekday OT" value={`${results.summary.totalOt15}h`} color="blue" />
               <StatCard label="Off-Day OT" value={`${results.summary.totalOt20Days}d`} color="emerald" />
+              <StatCard label="Addl OT 2.0" value={`+${results.summary.totalOt20AdditionalHrs}h`} color="purple" />
             </div>
 
+            {/* Sheet Status */}
+            {results.sheetStatus && results.sheetStatus.length > 0 && (
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-900/40 overflow-hidden">
+                <div className="px-5 py-3 border-b border-neutral-800 flex items-center gap-2">
+                  <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Attendance Sheet Validation</p>
+                  <span className="text-[10px] text-neutral-600">— sheets outside target month are skipped automatically</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-neutral-800">
+                        <th className="px-4 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase tracking-wider">File</th>
+                        <th className="px-4 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Sheet</th>
+                        <th className="px-4 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Detected Period</th>
+                        <th className="px-4 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Overlap</th>
+                        <th className="px-4 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Status</th>
+                        <th className="px-4 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-800/50">
+                      {results.sheetStatus.map((s: SheetStatus, i: number) => (
+                        <tr key={i} className="hover:bg-neutral-800/30 transition-colors">
+                          <td className="px-4 py-2 text-neutral-500 text-[11px]">{s.file}</td>
+                          <td className="px-4 py-2 text-neutral-300 font-medium text-[11px]">{s.sheet}</td>
+                          <td className="px-4 py-2 text-neutral-400 text-[11px] font-mono">{s.detectedPeriod}</td>
+                          <td className="px-4 py-2 text-[11px]">
+                            <span className={s.overlapPct >= 90 ? 'text-emerald-400' : s.overlapPct >= 50 ? 'text-amber-400' : 'text-red-400'}>
+                              {s.overlapPct}%
+                            </span>
+                          </td>
+                          <td className="px-4 py-2">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest
+                              ${s.status === 'GREEN' ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-800/40' :
+                                s.status === 'PARTIAL' ? 'bg-amber-900/40 text-amber-400 border border-amber-800/40' :
+                                'bg-red-900/40 text-red-400 border border-red-800/40'}`}>
+                              {s.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-neutral-500 text-[11px]">{s.action}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Downloads */}
             <div className="rounded-2xl border border-neutral-800 bg-neutral-900/40 overflow-hidden">
-              <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-neutral-800">
+              <div className={`grid grid-cols-1 ${results.attendance2Base64 ? 'md:grid-cols-3' : 'md:grid-cols-2'} divide-y md:divide-y-0 md:divide-x divide-neutral-800`}>
                 <DownloadButton
-                  label="Filled Attendance Template"
-                  sub="Ready for NHGP submission"
-                  onClick={() => downloadFile(results.attendanceBase64, `NHGP_ATTENDANCE_filled_2026_04.xlsx`)}
+                  label="Filled Attendance 1"
+                  sub="Template 1 ready"
+                  onClick={() => downloadFile(results.attendanceBase64, `NHGP_ATTENDANCE_1_${results.summary.targetMonth}.xlsx`)}
                 />
+                {results.attendance2Base64 && (
+                  <DownloadButton
+                    label="Filled Attendance 2"
+                    sub="Template 2 ready"
+                    onClick={() => downloadFile(results.attendance2Base64!, `NHGP_ATTENDANCE_2_${results.summary.targetMonth}.xlsx`)}
+                  />
+                )}
                 <DownloadButton
                   label="OT Checking Report"
-                  sub="Verified with discrepancy flags"
-                  onClick={() => downloadFile(results.reportBase64, `OT_Checking_Processed_2026_04.xlsx`)}
+                  sub="Full verification log"
+                  onClick={() => downloadFile(results.reportBase64, `OT_Checking_${results.summary.targetMonth}.xlsx`)}
                 />
               </div>
             </div>
 
+            {/* Unclassified warning */}
             {results.summary.unclassifiedShifts > 0 && (
               <div className="flex items-start gap-3 p-4 rounded-xl border border-yellow-800/40 bg-yellow-900/10">
                 <svg className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
                 <div>
                   <p className="text-xs font-semibold text-yellow-300">{results.summary.unclassifiedShifts} unclassified shift records</p>
-                  <p className="text-[11px] text-yellow-600 mt-0.5">Clock-in times outside standard windows (06:00–11:59). These records are flagged in the OT report for manual HR review.</p>
+                  <p className="text-[11px] text-yellow-600 mt-0.5">Clock-in times outside standard windows. Flagged in OT report for manual HR review.</p>
                 </div>
               </div>
             )}
@@ -148,20 +225,21 @@ export default function SoftServicesPage() {
   )
 }
 
+// =============================================================================
+// SUB-COMPONENTS
+// =============================================================================
 function UploadZone({ label, file, onFile, hint, color }: { label: string; file: File | null; onFile: (f: File) => void; hint: string; color: string }) {
   const [drag, setDrag] = useState(false)
   const ref = useRef<HTMLInputElement>(null)
-
   const colorMap: Record<string, string> = {
     blue: 'border-blue-500/30 bg-blue-500/5 text-blue-400',
     emerald: 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400',
-    amber: 'border-amber-500/30 bg-amber-500/5 text-amber-400'
+    amber: 'border-amber-500/30 bg-amber-500/5 text-amber-400',
   }
-
   return (
     <div className="space-y-2">
       <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{label}</p>
-      <input ref={ref} type="file" accept=".xlsx,.xls" className="hidden"
+      <input ref={ref} type="file" accept=".xlsx,.xls,.xlsb" className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) { onFile(f); e.target.value = '' } }} />
       <div
         onClick={() => ref.current?.click()}
@@ -205,7 +283,13 @@ function DownloadButton({ label, sub, onClick }: { label: string; sub: string; o
 }
 
 function StatCard({ label, value, color = 'neutral' }: { label: string; value: string | number; color?: string }) {
-  const c: Record<string, string> = { neutral: 'text-neutral-100', amber: 'text-amber-400', blue: 'text-blue-400', emerald: 'text-emerald-400' }
+  const c: Record<string, string> = {
+    neutral: 'text-neutral-100',
+    amber: 'text-amber-400',
+    blue: 'text-blue-400',
+    emerald: 'text-emerald-400',
+    purple: 'text-purple-400',
+  }
   return (
     <div className="p-5 rounded-2xl border border-neutral-800 bg-neutral-900/40 flex flex-col gap-1">
       <p className={`text-2xl font-bold ${c[color]}`}>{value}</p>
