@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import Link from 'next/link'
+import * as XLSX from 'xlsx'
 import { runOtVerification } from '@/utils/otVerificationEngine'
 import { uploadEvidenceAction } from '@/actions/uploadEvidence'
+import { LayoutContainer } from '@/components/LayoutContainer'
+import { AiInsightPanel } from '@/components/AiInsightPanel'
 
 type UploadState = 'idle' | 'dragging' | 'ready'
 type StepStatus = 'pending' | 'running' | 'done' | 'error'
@@ -102,14 +104,16 @@ export default function OtVerificationPage() {
   const [attendance, setAttendance] = useState<FileSlot>({ state: 'idle', file: null, base64: null })
   const [claims, setClaims] = useState<FileSlot>({ state: 'idle', file: null, base64: null })
   const [template, setTemplate] = useState<FileSlot>({ state: 'idle', file: null, base64: null })
+  const [employeeListing, setEmployeeListing] = useState<FileSlot>({ state: 'idle', file: null, base64: null })
   const [photos, setPhotos] = useState<{ state: UploadState; files: File[] }>({ state: 'idle', files: [] })
-  
+
   const [steps, setSteps] = useState<Step[]>(STEPS.map(s => ({ ...s })))
   const [running, setRunning] = useState(false)
   const [outputB64, setOutputB64] = useState<string | null>(null)
   const [summary, setSummary] = useState<any>(null)
   const [errors, setErrors] = useState<string[]>([])
   const [globalError, setGlobalError] = useState<string | null>(null)
+  const [preflightChecks, setPreflightChecks] = useState<{ label: string; status: 'pass' | 'warn' | 'fail'; detail: string }[] | null>(null)
 
   const readB64 = (file: File): Promise<string> =>
     new Promise((res, rej) => {
@@ -119,7 +123,68 @@ export default function OtVerificationPage() {
       r.readAsDataURL(file)
     })
 
-  const handleFile = useCallback(async (file: File | File[], slot: 'attendance' | 'claims' | 'template' | 'photos') => {
+  const runPreflightScan = useCallback((attendanceB64: string | null, claimsB64: string | null) => {
+    const checks: { label: string; status: 'pass' | 'warn' | 'fail'; detail: string }[] = []
+
+    if (attendanceB64) {
+      try {
+        const wb = XLSX.read(attendanceB64, { type: 'base64' })
+        const sheets = wb.SheetNames
+        for (const c of ['PNHR', 'PFS', 'GM']) {
+          checks.push({
+            label: `Sheet: ${c}`,
+            status: sheets.includes(c) ? 'pass' : 'fail',
+            detail: sheets.includes(c) ? `${c} sheet found` : `${c} sheet missing in attendance file`,
+          })
+        }
+        let detailsFound = false
+        let rowCount = 0
+        for (const c of ['PNHR', 'PFS', 'GM']) {
+          if (!sheets.includes(c)) continue
+          const rows: any[][] = XLSX.utils.sheet_to_json(wb.Sheets[c], { header: 1, defval: null }) as any[][]
+          for (const row of rows) {
+            if (String(row[0] ?? '').trim() === 'Details') detailsFound = true
+          }
+          rowCount += rows.length
+        }
+        checks.push({
+          label: '"Details" Marker',
+          status: detailsFound ? 'pass' : 'fail',
+          detail: detailsFound ? 'Found in at least one company sheet' : 'Not found — file may be malformed',
+        })
+        checks.push({
+          label: 'Attendance Rows',
+          status: rowCount > 0 ? 'pass' : 'warn',
+          detail: rowCount > 0 ? `${rowCount} rows detected across sheets` : 'No data rows found — file may be empty',
+        })
+      } catch {
+        checks.push({ label: 'Attendance Parse', status: 'fail', detail: 'Could not read attendance file' })
+      }
+    }
+
+    if (claimsB64) {
+      try {
+        const wb = XLSX.read(claimsB64, { type: 'base64' })
+        const sheets = wb.SheetNames
+        checks.push({
+          label: 'DST-OT-NAMELIST',
+          status: sheets.includes('DST-OT-NAMELIST') ? 'pass' : 'fail',
+          detail: sheets.includes('DST-OT-NAMELIST') ? 'DST claims sheet found' : 'Missing — DST claims cannot be processed',
+        })
+        checks.push({
+          label: 'MINOR-OT-NAMELIST',
+          status: sheets.includes('MINOR-OT-NAMELIST') ? 'pass' : 'fail',
+          detail: sheets.includes('MINOR-OT-NAMELIST') ? 'MINOR claims sheet found' : 'Missing — MINOR claims cannot be processed',
+        })
+      } catch {
+        checks.push({ label: 'Claims Parse', status: 'fail', detail: 'Could not read claims file' })
+      }
+    }
+
+    setPreflightChecks(checks.length > 0 ? checks : null)
+  }, [])
+
+  const handleFile = async (file: File | File[], slot: 'attendance' | 'claims' | 'template' | 'employeeListing' | 'photos') => {
     setGlobalError(null)
     if (slot === 'photos') {
       const newFiles = file as File[]
@@ -131,10 +196,18 @@ export default function OtVerificationPage() {
     if (!f.name.match(/\.(xlsx|xls)$/i)) { setGlobalError('Only .xlsx / .xls files are accepted.'); return }
     const b64 = await readB64(f)
     const s: FileSlot = { state: 'ready', file: f, base64: b64 }
-    if (slot === 'attendance') setAttendance(s)
-    else if (slot === 'claims') setClaims(s)
-    else setTemplate(s)
-  }, [])
+    if (slot === 'attendance') {
+      setAttendance(s)
+      runPreflightScan(b64, claims.base64)
+    } else if (slot === 'claims') {
+      setClaims(s)
+      runPreflightScan(attendance.base64, b64)
+    } else if (slot === 'employeeListing') {
+      setEmployeeListing(s)
+    } else {
+      setTemplate(s)
+    }
+  }
 
   const parsePhotoName = (fileName: string) => {
     // Expected: Name_MM-DD.jpg or Name_YYYY-MM-DD.jpg
@@ -206,7 +279,7 @@ export default function OtVerificationPage() {
 
       // Step 4: Verification
       updateStep(4, { status: 'running' })
-      const result = await runOtVerification(attendance.base64, claims.base64, template.base64, evidenceMetadata)
+      const result = await runOtVerification(attendance.base64, claims.base64, template.base64, employeeListing.base64 ?? undefined, evidenceMetadata)
       updateStep(4, { status: 'done', detail: `${result.summary.totalEmployees} employees · ${result.summary.totalClaimedDays} claimed days processed` })
 
       // Step 5: Output
@@ -240,8 +313,10 @@ export default function OtVerificationPage() {
     setAttendance({ state: 'idle', file: null, base64: null })
     setClaims({ state: 'idle', file: null, base64: null })
     setTemplate({ state: 'idle', file: null, base64: null })
+    setEmployeeListing({ state: 'idle', file: null, base64: null })
     setPhotos({ state: 'idle', files: [] })
     setSteps(STEPS.map(s => ({ ...s, status: 'pending' })))
+    setPreflightChecks(null)
     setOutputB64(null); setSummary(null); setErrors([]); setGlobalError(null); setRunning(false)
   }
 
@@ -251,23 +326,8 @@ export default function OtVerificationPage() {
   const netColor = summary ? (summary.netDifference < 0 ? 'red' : summary.netDifference > 0 ? 'emerald' : 'neutral') : 'neutral'
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-neutral-100 font-sans flex flex-col">
-      {/* Header */}
-      <header className="h-14 border-b border-neutral-800 flex items-center justify-between px-6 shrink-0 bg-neutral-900/80 backdrop-blur">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="text-neutral-500 hover:text-neutral-300 transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          </Link>
-          <span className="text-neutral-800">|</span>
-          <h1 className="text-sm font-semibold text-neutral-200 tracking-tight">HR Hard Service — DST & Minor OT Allowance Integrated Verification</h1>
-        </div>
-        <div className="flex items-center gap-2 px-3 py-1 bg-emerald-900/20 border border-emerald-800/40 rounded-full">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-widest">PDPA · Secure</span>
-        </div>
-      </header>
-
-      <main className="flex-1 flex items-start justify-center px-4 py-10">
+    <LayoutContainer title="Hard Services OT Verification" showPdpaBadge={true}>
+      <div className="flex items-start justify-center">
         <div className="w-full max-w-2xl flex flex-col gap-6">
 
           {/* Title */}
@@ -281,15 +341,16 @@ export default function OtVerificationPage() {
           <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 flex flex-col gap-5">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest">Step 1 — Upload Required Files & Photos</p>
-              <p className="text-[10px] text-neutral-600">{[attendance, claims, template].filter(f => f.state === 'ready').length}/3 files ready · {photos.files.length} photos</p>
+              <p className="text-[10px] text-neutral-600">{[attendance, claims, template].filter(f => f.state === 'ready').length}/3 required · {photos.files.length} photos · {employeeListing.state === 'ready' ? '1' : '0'} listing</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <UploadZone slot="attendance" label="File A — Attendance Data" hint="Attandance April-3companies.xlsx" color="blue" fileSlot={attendance} onFile={f => handleFile(f, 'attendance')} />
               <UploadZone slot="claims" label="File B — Manager Claims" hint="MINOR & DST Attanance April.xlsx" color="amber" fileSlot={claims} onFile={f => handleFile(f, 'claims')} />
               <UploadZone slot="template" label="File C — Blank Template" hint="DST_OT_Allowance_blank.xlsx" color="emerald" fileSlot={template} onFile={f => handleFile(f, 'template')} />
-              <UploadZone slot="photos" label="Evidence Photos" hint="Upload all site photos (Name_MM-DD.jpg)" color="indigo" fileSlot={photos} onFile={f => handleFile(f, 'photos')} multiple={true} />
+              <UploadZone slot="employeeListing" label="File D — Employee Listing (Optional)" hint="EmployeeListing.xlsx" color="violet" fileSlot={employeeListing} onFile={f => handleFile(f, 'employeeListing')} />
             </div>
+            <UploadZone slot="photos" label="Evidence Photos" hint="Upload all site photos (Name_MM-DD.jpg)" color="indigo" fileSlot={photos} onFile={f => handleFile(f, 'photos')} multiple={true} />
 
             {globalError && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg border border-red-800/40 bg-red-900/15">
@@ -297,6 +358,23 @@ export default function OtVerificationPage() {
                 <p className="text-xs text-red-300">{globalError}</p>
               </div>
             )}
+
+            {/* Pre-flight AI Panel — full-width, below the 2×2 upload grid */}
+            {preflightChecks && (() => {
+              const passCount = preflightChecks.filter(c => c.status === 'pass').length
+              const failCount = preflightChecks.filter(c => c.status === 'fail').length
+              const summary = failCount > 0
+                ? `${failCount} critical issue${failCount > 1 ? 's' : ''} detected — resolve before running verification.`
+                : `${passCount}/${preflightChecks.length} checks passed — file structure looks good.`
+              return (
+                <AiInsightPanel
+                  type="pre-flight"
+                  title="AI Pre-flight Check"
+                  summary={summary}
+                  checks={preflightChecks}
+                />
+              )
+            })()}
           </div>
 
           {/* Progress Panel */}
@@ -378,7 +456,7 @@ export default function OtVerificationPage() {
           )}
 
         </div>
-      </main>
-    </div>
+      </div>
+    </LayoutContainer>
   )
 }

@@ -281,6 +281,35 @@ export function resolveConflicts(dst: ClaimRow[], minor: ClaimRow[]): {
   return { cleanedMinor, conflictLog }
 }
 
+// ─── Phase 2b: Load Employee Listing ────────────────────────────────────────
+export function parseEmployeeListing(base64: string): Record<string, EmpInfo> {
+  const wb = XLSX.read(base64, { type: 'base64' })
+  const result: Record<string, EmpInfo> = {}
+  const sheetName = wb.SheetNames[0]
+  if (!sheetName) return result
+  const ws = wb.Sheets[sheetName]
+  const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null }) as any[][]
+  if (rows.length < 2) return result
+  const headers = rows[0].map((h: any) => String(h ?? '').trim())
+  const ci = (name: string) => headers.findIndex(h => h.toUpperCase() === name.toUpperCase())
+  const codeCol = ci('Employee Code')
+  const nameCol = ci('Employee Name')
+  const companyCol = ci('Company')
+  const designationCol = ci('Designation')
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i]
+    const code = normalizeCode(row[codeCol])
+    if (!code) continue
+    const name = String(row[nameCol] ?? '').trim()
+    const company = String(row[companyCol] ?? '').trim()
+    const designation = String(row[designationCol] ?? '').trim()
+    const desUpper = designation.toUpperCase()
+    const driverStatus = desUpper.includes('DRIVER') || desUpper.includes('CUM DRIVER')
+    result[code] = { name, company, designation, isDriver: driverStatus }
+  }
+  return result
+}
+
 // ─── Phase 5: Check Eligibility ───────────────────────────────────────────────
 export function checkEligibility(
   empCode: string,
@@ -504,12 +533,25 @@ export async function runOtVerification(
   attendanceB64: string,
   claimsB64: string,
   templateB64: string,
+  employeeListingB64?: string,
   evidencePhotos: { fileName: string; url: string; matchedName: string; matchedDate: string }[] = []
 ): Promise<VerificationResult> {
   const errors: string[] = []
 
   // Parse
   const { attendanceDict, empInfo } = parseAttendance(attendanceB64)
+
+  // Merge Employee Listing — override isDriver from authoritative listing
+  if (employeeListingB64) {
+    const listingInfo = parseEmployeeListing(employeeListingB64)
+    for (const [code, listing] of Object.entries(listingInfo)) {
+      if (empInfo[code]) {
+        empInfo[code] = { ...empInfo[code], isDriver: listing.isDriver }
+      } else {
+        empInfo[code] = listing
+      }
+    }
+  }
   const dstClaims = parseClaimNamelist(claimsB64, 'DST-OT-NAMELIST', 'DST')
   const minorClaims = parseClaimNamelist(claimsB64, 'MINOR-OT-NAMELIST', 'MINOR')
 
