@@ -100,8 +100,9 @@ export default function SoftServicesPage() {
           <button
             disabled={!canRun}
             onClick={handleRun}
-            className={`w-full max-w-sm py-3.5 px-6 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-3
-              ${canRun ? 'bg-neutral-100 text-neutral-900 hover:bg-white shadow-lg' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'}`}
+            style={canRun ? { backgroundColor: '#ff914d', color: '#0a0a0a' } : undefined}
+            className={`w-full max-w-sm py-3.5 px-6 rounded-xl font-semibold text-sm transition-all duration-300 flex items-center justify-center gap-3
+              ${canRun ? 'hover:opacity-90 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-orange-500/10' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'}`}
           >
             {running && <div className="w-4 h-4 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />}
             {running ? 'Processing in Browser…' : 'Run Automation'}
