@@ -465,8 +465,8 @@ export function buildAndWriteOutput(
     }
   }
 
-  // ── Sheet 1b: MINOR OT-NAMELIST
-  const ws1b = wb.Sheets['MINOR OT-NAMELIST']
+  // ── Sheet 1b: MINOR OT-NAMELIST (fallback to 'MINOR' sheet name)
+  const ws1b = wb.Sheets['MINOR OT-NAMELIST'] ?? wb.Sheets['MINOR']
   if (ws1b) {
     const minorClaims = allClaims.filter(c => c.type === 'MINOR')
     const byEmpMinor = new Map<string, typeof minorClaims>()
