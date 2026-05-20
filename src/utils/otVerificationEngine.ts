@@ -465,6 +465,39 @@ export function buildAndWriteOutput(
     }
   }
 
+  // ── Sheet 1b: MINOR OT-NAMELIST
+  const ws1b = wb.Sheets['MINOR OT-NAMELIST']
+  if (ws1b) {
+    const minorClaims = allClaims.filter(c => c.type === 'MINOR')
+    const byEmpMinor = new Map<string, typeof minorClaims>()
+    for (const c of minorClaims) {
+      const k = c.result.empCode || c.empCode
+      if (!byEmpMinor.has(k)) byEmpMinor.set(k, [])
+      byEmpMinor.get(k)!.push(c)
+    }
+
+    let rowIdxMinor = 5 // 1-based, data starts row 5
+    let snoMinor = 1
+    for (const [code, rows] of byEmpMinor) {
+      const first = rows[0]
+      const info = empInfo[code]
+      XLSX.utils.sheet_add_aoa(ws1b, [[
+        snoMinor++,
+        first.name,
+        code,
+        first.fin,
+        ...Array.from({length: 30}, (_, d) => {
+          const dateStr = `2026-04-${String(d + 1).padStart(2, '0')}`
+          return rows.find(r => r.date === dateStr && r.result.eligible) ? 1 : null
+        }),
+        rows.filter(r => r.result.eligible).length,
+        rows.filter(r => r.result.eligible).reduce((s, r) => s + r.result.allowance, 0),
+        info?.company ?? ''
+      ]], { origin: { r: rowIdxMinor - 1, c: 0 } })
+      rowIdxMinor++
+    }
+  }
+
   // ── Sheet 2: OT_ALLOWANCE_SUMMARY
   const ws2 = wb.Sheets['OT_ALLOWANCE_SUMMARY'] ?? XLSX.utils.aoa_to_sheet([['S.No','Emp Code','Name','Company','Type','Original Days','Calculated Days','Day Difference','Original Amount','Calculated Amount','Amount Difference']])
   if (!wb.Sheets['OT_ALLOWANCE_SUMMARY']) wb.Sheets['OT_ALLOWANCE_SUMMARY'] = ws2
