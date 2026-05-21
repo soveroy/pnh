@@ -21,6 +21,7 @@ export default function SoftServicesPage() {
   const [results, setResults] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [preflightChecks, setPreflightChecks] = useState<{ label: string; status: 'pass' | 'warn' | 'fail'; detail: string }[] | null>(null)
+  const [activeTab, setActiveTab] = useState<'engine' | 'playbook'>('engine')
 
   const readB64 = (file: File): Promise<string> =>
     new Promise((res, rej) => {
@@ -229,8 +230,36 @@ export default function SoftServicesPage() {
           </p>
         </div>
 
-        {/* Upload Zones */}
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 flex flex-col gap-5">
+        {/* Tab Navigation */}
+        <div className="flex border-b border-neutral-800 gap-6">
+          <button
+            onClick={() => setActiveTab('engine')}
+            className={`pb-3 text-sm font-semibold relative transition-all duration-200 ${
+              activeTab === 'engine' ? 'text-neutral-100' : 'text-neutral-500 hover:text-neutral-300'
+            }`}
+          >
+            OT Automation Engine
+            {activeTab === 'engine' && (
+              <span className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ backgroundColor: '#ff914d' }} />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('playbook')}
+            className={`pb-3 text-sm font-semibold relative transition-all duration-200 ${
+              activeTab === 'playbook' ? 'text-neutral-100' : 'text-neutral-500 hover:text-neutral-300'
+            }`}
+          >
+            HR Playbook & Guide
+            {activeTab === 'playbook' && (
+              <span className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ backgroundColor: '#ff914d' }} />
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'engine' ? (
+          <>
+            {/* Upload Zones */}
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 flex flex-col gap-5">
           <div className="flex items-center justify-between">
             <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest">Step 1 — Upload Required Files</p>
             <p className="text-[10px] text-neutral-600">
@@ -397,6 +426,10 @@ export default function SoftServicesPage() {
             )}
           </div>
         )}
+          </>
+        ) : (
+          <PlaybookTabContent />
+        )}
       </div>
     </LayoutContainer>
   )
@@ -471,6 +504,258 @@ function StatCard({ label, value, color = 'neutral' }: { label: string; value: s
     <div className="p-5 rounded-2xl border border-neutral-800 bg-neutral-900/40 flex flex-col gap-1">
       <p className={`text-2xl font-bold ${c[color]}`}>{value}</p>
       <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{label}</p>
+    </div>
+  )
+}
+
+function PlaybookTabContent() {
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-3 duration-300">
+      {/* Intro Hero Card */}
+      <div className="p-6 rounded-2xl border border-neutral-800 bg-gradient-to-r from-neutral-900 to-neutral-950 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="space-y-2 max-w-xl">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#ff914d' }} />
+            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">PNH HR Hub</p>
+          </div>
+          <h3 className="text-xl font-bold text-neutral-100 tracking-tight">Soft Services Playbook & User Guide</h3>
+          <p className="text-xs text-neutral-400 leading-relaxed">
+            Welcome to your interactive in-app user guide. This playbook explains all features, calculation formulas, and validation badges to help you process overtime for Soft Services cleaners quickly and easily.
+          </p>
+        </div>
+        <div className="px-4 py-2 rounded-xl bg-neutral-800/50 border border-neutral-700/50 text-[11px] text-neutral-300 font-mono shrink-0">
+          PDPA Compliant · In-Browser Engine
+        </div>
+      </div>
+
+      {/* Legacy vs Automation Comparison */}
+      <div className="space-y-3">
+        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Legacy vs. AI Automation</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-5 rounded-2xl border border-neutral-800 bg-neutral-900/30 space-y-3">
+            <div className="flex items-center gap-2 text-red-400/80">
+              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+              <h4 className="text-xs font-bold uppercase tracking-wider">The Legacy Manual Era</h4>
+            </div>
+            <ul className="space-y-2 text-[11px] text-neutral-400 leading-relaxed list-disc list-inside">
+              <li>Manually transcribing punch times from biometric files into templates.</li>
+              <li>Calculations done using tedious Excel sheets with human typing mistakes.</li>
+              <li>Manually cross-referencing Public Holidays and Sundays for double rates.</li>
+              <li>Manually filtering and skipping part-time staff based on shift hours.</li>
+              <li>No layout validation, risking data corruption or silent calculation failures.</li>
+            </ul>
+          </div>
+          
+          <div className="p-5 rounded-2xl border border-neutral-800/80 bg-neutral-900/60 space-y-3 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none" />
+            <div className="flex items-center gap-2 text-emerald-400">
+              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+              <h4 className="text-xs font-bold uppercase tracking-wider">The Automated AI Hub Era</h4>
+            </div>
+            <ul className="space-y-2 text-[11px] text-neutral-300 leading-relaxed list-disc list-inside">
+              <li className="marker:text-emerald-400">Files parsed instantly in memory (100% locally in your browser).</li>
+              <li className="marker:text-emerald-400">Automatic shift classification & public holiday calendar processing.</li>
+              <li className="marker:text-emerald-400">Accurate Sunday/PH split calculations (Standard vs Additional Hours).</li>
+              <li className="marker:text-emerald-400">Smart part-time exclusions applied automatically.</li>
+              <li className="marker:text-emerald-400">Real-time validation flags (GREEN/PARTIAL/STALE) to protect data sheet health.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Required Files Checklist */}
+      <div className="space-y-3">
+        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Required Files & Structures</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-900/40 space-y-2">
+            <span className="w-5 h-5 rounded bg-blue-900/30 text-blue-400 flex items-center justify-center text-[10px] font-bold">1</span>
+            <p className="text-xs font-bold text-neutral-200">Raw Time Sheet</p>
+            <p className="text-[10px] text-neutral-400 leading-relaxed">
+              Must contain a sheet named <span className="font-mono text-neutral-300 text-[9px] bg-neutral-800 px-1 py-0.5 rounded">EmployeeAttendance</span> with headers: Employee Code, Date, Time In, Time Out.
+            </p>
+          </div>
+          <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-900/40 space-y-2">
+            <span className="w-5 h-5 rounded bg-emerald-900/30 text-emerald-400 flex items-center justify-center text-[10px] font-bold">2</span>
+            <p className="text-xs font-bold text-neutral-200">Attendance Sheet 1</p>
+            <p className="text-[10px] text-neutral-400 leading-relaxed">
+              Polyclinic sheets where column C has cleaner codes starting with <span className="font-mono text-neutral-300 text-[9px] bg-neutral-800 px-1 py-0.5 rounded">G</span> and row 4 has dates.
+            </p>
+          </div>
+          <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-900/40 space-y-2">
+            <span className="w-5 h-5 rounded bg-emerald-900/30 text-emerald-400 flex items-center justify-center text-[10px] font-bold">3</span>
+            <p className="text-xs font-bold text-neutral-200">Attendance Sheet 2</p>
+            <p className="text-[10px] text-neutral-400 leading-relaxed font-normal">
+              (Optional) Secondary sheet if you have two templates to populate. Same layout rules as Attendance 1.
+            </p>
+          </div>
+          <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-900/40 space-y-2">
+            <span className="w-5 h-5 rounded bg-amber-900/30 text-amber-400 flex items-center justify-center text-[10px] font-bold">4</span>
+            <p className="text-xs font-bold text-neutral-200">OT Checking Report</p>
+            <p className="text-[10px] text-neutral-400 leading-relaxed">
+              Template file for generating validation logs comparing the biometric time sheet vs attendance.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Rules Accordions */}
+      <div className="space-y-3">
+        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Calculation Rules & Logic</p>
+        <div className="space-y-3">
+          
+          <details className="group border border-neutral-800 bg-neutral-900/40 rounded-xl overflow-hidden transition-all duration-200">
+            <summary className="px-5 py-4 flex items-center justify-between font-semibold text-xs text-neutral-200 cursor-pointer hover:bg-neutral-800/30 select-none">
+              <span>Weekday Shifts OT (Rate 1.5×)</span>
+              <svg className="w-4 h-4 text-neutral-500 group-open:rotate-180 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </summary>
+            <div className="px-5 pb-5 pt-1 border-t border-neutral-800 text-[11px] text-neutral-400 leading-relaxed space-y-2">
+              <p>Weekday overtime is calculated automatically depending on the cleaner's clock-in time:</p>
+              <ul className="list-disc list-inside pl-2 space-y-1.5">
+                <li><strong className="text-neutral-300">Shift 1 (Morning):</strong> If clock-in is before or at <span className="text-neutral-200 font-mono">08:30</span>, the shift ends at <span className="text-neutral-200 font-mono">17:00</span>. Any hours worked after <span className="text-neutral-200 font-mono">17:00</span> are calculated as OT.</li>
+                <li><strong className="text-neutral-300">Shift 2 (Mid-day):</strong> If clock-in is after or at <span className="text-neutral-200 font-mono">09:30</span>, the shift ends at <span className="text-neutral-200 font-mono">19:30</span>. Any hours worked after <span className="text-neutral-200 font-mono">19:30</span> are calculated as OT.</li>
+                <li><strong className="text-neutral-300">Smart Mid-Zone Handling:</strong> If clock-in is between <span className="text-neutral-200 font-mono">08:31</span> and <span className="text-neutral-200 font-mono">09:29</span>, the engine uses the clock-out time to determine the correct shift assignment.</li>
+                <li><strong className="text-neutral-300">30-Minute Rounding:</strong> All calculated weekday OT is automatically rounded down to the nearest 30-minute block (e.g. 1h 40m becomes 1.5h).</li>
+              </ul>
+            </div>
+          </details>
+
+          <details className="group border border-neutral-800 bg-neutral-900/40 rounded-xl overflow-hidden transition-all duration-200">
+            <summary className="px-5 py-4 flex items-center justify-between font-semibold text-xs text-neutral-200 cursor-pointer hover:bg-neutral-800/30 select-none">
+              <span>Saturday Shifts OT (Rate 1.5×)</span>
+              <svg className="w-4 h-4 text-neutral-500 group-open:rotate-180 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </summary>
+            <div className="px-5 pb-5 pt-1 border-t border-neutral-800 text-[11px] text-neutral-400 leading-relaxed space-y-2">
+              <p>Saturdays feature distinct work triggers to accommodate polyclinic weekend operational hours:</p>
+              <ul className="list-disc list-inside pl-2 space-y-1.5">
+                <li><strong className="text-neutral-300">Shift 1 (Morning):</strong> OT triggers after <span className="text-neutral-200 font-mono">13:30</span>.</li>
+                <li><strong className="text-neutral-300">Shift 2 (Mid-day):</strong> OT triggers after <span className="text-neutral-200 font-mono">15:00</span>.</li>
+                <li><strong className="text-neutral-300">Shift 3 (Late):</strong> If clock-in occurs after <span className="text-neutral-200 font-mono">12:00</span> on a Saturday, no OT is calculated.</li>
+              </ul>
+            </div>
+          </details>
+
+          <details className="group border border-neutral-800 bg-neutral-900/40 rounded-xl overflow-hidden transition-all duration-200">
+            <summary className="px-5 py-4 flex items-center justify-between font-semibold text-xs text-neutral-200 cursor-pointer hover:bg-neutral-800/30 select-none">
+              <span>Sundays & Public Holidays (Rate 2.0× Dual Split)</span>
+              <svg className="w-4 h-4 text-neutral-500 group-open:rotate-180 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </summary>
+            <div className="px-5 pb-5 pt-1 border-t border-neutral-800 text-[11px] text-neutral-400 leading-relaxed space-y-3">
+              <p>
+                Sundays and Public Holidays pay 2.0× double rates, which the engine splits into standard "Days" and "Additional Hours":
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3 bg-neutral-900/60 rounded-lg border border-neutral-800 space-y-1">
+                  <p className="text-xs font-bold text-neutral-200">1. Standard OT Days</p>
+                  <p className="text-[10px] text-neutral-400">
+                    If hours worked ≤ 4.0: counts as <strong className="text-neutral-300">0.5 Days</strong>.<br />
+                    If hours worked &gt; 4.0: counts as <strong className="text-neutral-300">1.0 Day</strong> (capped at 1.0 day).
+                  </p>
+                </div>
+                <div className="p-3 bg-neutral-900/60 rounded-lg border border-neutral-800 space-y-1">
+                  <p className="text-xs font-bold text-neutral-200">2. Additional Hours ("addl")</p>
+                  <p className="text-[10px] text-neutral-400">
+                    If total worked time exceeds 8.0 hours, the first 8h are covered by the 1.0 standard day. All hours <strong className="text-neutral-300">beyond 8h</strong> are calculated as additional hourly OT.
+                  </p>
+                </div>
+              </div>
+              <p className="text-[10px] text-neutral-500 italic">
+                *The system integrates the full 2025–2026 Singapore Public Holiday calendar to automatically identify rest days.
+              </p>
+            </div>
+          </details>
+
+          <details className="group border border-neutral-800 bg-neutral-900/40 rounded-xl overflow-hidden transition-all duration-200">
+            <summary className="px-5 py-4 flex items-center justify-between font-semibold text-xs text-neutral-200 cursor-pointer hover:bg-neutral-800/30 select-none">
+              <span>Part-Time Cleaners Exclusion Rule</span>
+              <svg className="w-4 h-4 text-neutral-500 group-open:rotate-180 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </summary>
+            <div className="px-5 pb-5 pt-1 border-t border-neutral-800 text-[11px] text-neutral-400 leading-relaxed space-y-2">
+              <p>Part-time workers are not eligible for standard overtime. The system filters them out based on work-day statistics:</p>
+              <ul className="list-disc list-inside pl-2 space-y-1.5">
+                <li>If a cleaner's average daily worked hours are <strong className="text-neutral-300">≤ 5.5 hours</strong>...</li>
+                <li>AND they have <strong className="text-neutral-300">no single day</strong> exceeding <strong className="text-neutral-300">6.0 worked hours</strong>...</li>
+                <li>They are classified as <strong className="text-neutral-300">Part-Time</strong>. The engine logs them as PT and excludes them from receiving OT calculations to prevent payroll errors.</li>
+              </ul>
+            </div>
+          </details>
+
+        </div>
+      </div>
+
+      {/* FAQ & Troubleshooting */}
+      <div className="space-y-3">
+        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">FAQ & Calculations Reference</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-5 rounded-2xl border border-neutral-800 bg-neutral-900/40 space-y-2">
+            <h4 className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+              What does "null" mean in Excel?
+            </h4>
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              In the generated Excel sheets, <span className="font-mono text-neutral-300 bg-neutral-800 px-1 py-0.5 rounded text-[10px]">null</span> indicates <strong className="text-neutral-300">no OT hours or no data</strong>. This represents days the employee did not work, was absent, or did not perform overtime matching the shifts. Leaving it blank/null keeps the spreadsheets tidy and readable.
+            </p>
+          </div>
+          
+          <div className="p-5 rounded-2xl border border-neutral-800 bg-neutral-900/40 space-y-2">
+            <h4 className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+              What is "addl" on Sundays/PH?
+            </h4>
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              <strong className="text-neutral-300">"addl"</strong> refers to <strong className="text-neutral-300">Additional OT Hours</strong>. If a cleaner works more than 8 hours on a rest day/Public Holiday, they receive 1.0 day of standard OT, and the hours worked beyond 8.0h are calculated separately as additional hourly OT. You will see these listed as <span className="text-purple-400 font-bold font-mono">+X.Xh addl</span> in the audit logs.
+            </p>
+          </div>
+
+          <div className="p-5 rounded-2xl border border-neutral-800 bg-neutral-900/40 space-y-2">
+            <h4 className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              Why are sheets "Skipped"?
+            </h4>
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              If an attendance sheet displays a status of <span className="text-amber-400 font-bold">PARTIAL</span> (50-89% overlap) or <span className="text-red-400 font-bold">STALE</span> (&lt;50% overlap), the engine automatically skips writing to protect your files. This prevents filling wrong templates (e.g. pasting March time sheets into an April attendance template).
+            </p>
+          </div>
+
+          <div className="p-5 rounded-2xl border border-neutral-800 bg-neutral-900/40 space-y-2">
+            <h4 className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+              Is my data secure?
+            </h4>
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              <strong className="text-neutral-300">100% Yes.</strong> The automation engine executes fully within your web browser memory using standard JS logic. No files or personal biometric details are ever uploaded to external servers, satisfying strict PDPA and healthcare data security protocols.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Step-by-Step Action Plan */}
+      <div className="p-6 rounded-2xl border border-neutral-800 bg-neutral-900/40 space-y-4">
+        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest text-center">Your Monthly Workflow</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative">
+          <div className="space-y-1 relative text-center">
+            <span className="w-8 h-8 rounded-full border border-neutral-800 bg-neutral-900 flex items-center justify-center mx-auto text-xs font-bold text-neutral-300">1</span>
+            <p className="text-xs font-bold text-neutral-200 mt-2">Upload Files</p>
+            <p className="text-[10px] text-neutral-500">Drop the required biometric and attendance files.</p>
+          </div>
+          <div className="space-y-1 relative text-center">
+            <span className="w-8 h-8 rounded-full border border-neutral-800 bg-neutral-900 flex items-center justify-center mx-auto text-xs font-bold text-neutral-300">2</span>
+            <p className="text-xs font-bold text-neutral-200 mt-2">Review Badges</p>
+            <p className="text-[10px] text-neutral-500">Confirm the AI Pre-flight Check is all Green.</p>
+          </div>
+          <div className="space-y-1 relative text-center">
+            <span className="w-8 h-8 rounded-full border border-neutral-800 bg-neutral-900 flex items-center justify-center mx-auto text-xs font-bold text-neutral-300">3</span>
+            <p className="text-xs font-bold text-neutral-200 mt-2">Run Automation</p>
+            <p className="text-[10px] text-neutral-500">Click the orange button to calculate monthly OT.</p>
+          </div>
+          <div className="space-y-1 relative text-center">
+            <span className="w-8 h-8 rounded-full border border-neutral-800 bg-neutral-900 flex items-center justify-center mx-auto text-xs font-bold text-neutral-300">4</span>
+            <p className="text-xs font-bold text-neutral-200 mt-2">Download Results</p>
+            <p className="text-[10px] text-neutral-500">Save populated sheets and audit logs safely.</p>
+          </div>
+        </div>
+      </div>
+
     </div>
   )
 }
