@@ -347,7 +347,7 @@ export default function OtVerificationPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <UploadZone slot="attendance" label="File A — Attendance Data" hint="Attandance April-3companies.xlsx" color="blue" fileSlot={attendance} onFile={f => handleFile(f, 'attendance')} />
               <UploadZone slot="claims" label="File B — Manager Claims" hint="MINOR & DST Attanance April.xlsx" color="amber" fileSlot={claims} onFile={f => handleFile(f, 'claims')} />
-              <UploadZone slot="template" label="File C — Blank Template" hint="DST_OT_Allowance_blank.xlsx" color="emerald" fileSlot={template} onFile={f => handleFile(f, 'template')} />
+              <UploadZone slot="template" label="File C — OT Allowance Template (DST or MINOR)" hint="OT_Allowance_blank.xlsx" color="emerald" fileSlot={template} onFile={f => handleFile(f, 'template')} />
               <UploadZone slot="employeeListing" label="File D — Employee Listing (Optional)" hint="EmployeeListing.xlsx" color="violet" fileSlot={employeeListing} onFile={f => handleFile(f, 'employeeListing')} />
             </div>
             <UploadZone slot="photos" label="Evidence Photos" hint="Upload all site photos (Name_MM-DD.jpg)" color="indigo" fileSlot={photos} onFile={f => handleFile(f, 'photos')} multiple={true} />

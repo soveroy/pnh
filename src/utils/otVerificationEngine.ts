@@ -466,7 +466,14 @@ export function buildAndWriteOutput(
   }
 
   // ── Sheet 1b: MINOR OT-NAMELIST (fallback to 'MINOR' sheet name)
-  const ws1b = wb.Sheets['MINOR OT-NAMELIST'] ?? wb.Sheets['MINOR']
+  // Normalise sheet name — rename 'MINOR' → 'MINOR OT-NAMELIST' so output tab is always labelled correctly
+  if (!wb.Sheets['MINOR OT-NAMELIST'] && wb.Sheets['MINOR']) {
+    wb.Sheets['MINOR OT-NAMELIST'] = wb.Sheets['MINOR']
+    delete wb.Sheets['MINOR']
+    const idx = wb.SheetNames.indexOf('MINOR')
+    if (idx >= 0) wb.SheetNames[idx] = 'MINOR OT-NAMELIST'
+  }
+  const ws1b = wb.Sheets['MINOR OT-NAMELIST']
   if (ws1b) {
     const minorClaims = allClaims.filter(c => c.type === 'MINOR')
     const byEmpMinor = new Map<string, typeof minorClaims>()
