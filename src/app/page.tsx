@@ -90,6 +90,24 @@ export default function HubDashboard() {
               </div>
             </Link>
 
+            <Link href="/finance-3way-match/" className="group block">
+              <div className="p-6 rounded-lg border border-cyan-900/40 bg-cyan-950/20 hover:bg-cyan-900/20 hover:border-cyan-800/60 transition-all cursor-pointer h-full flex flex-col">
+                <div className="w-10 h-10 rounded-md bg-cyan-900/30 flex items-center justify-center mb-4 group-hover:bg-cyan-900/50 transition-colors">
+                  <svg className="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <h3 className="text-base font-medium text-neutral-200 mb-2">Finance 3-Way Match & Reconciliation</h3>
+                <p className="text-sm text-neutral-400 flex-1">
+                  Automate the matching and verification of Purchase Orders (PO), Goods Received Notes (GRN), and Supplier Invoices with client-side OCR extraction, visual character mutation self-correction, and payment sign-offs.
+                </p>
+                <div className="mt-6 flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-900/40 text-cyan-400 text-[10px] font-semibold uppercase tracking-widest border border-cyan-800/40">Finance AI</span>
+                  <span className="text-xs font-medium text-cyan-600 uppercase tracking-wider ml-auto">Launch Tool &rarr;</span>
+                </div>
+              </div>
+            </Link>
+
             <Link href="/ot-verification" className="group block">
               <div className="p-6 rounded-lg border border-amber-900/40 bg-amber-950/20 hover:bg-amber-900/20 hover:border-amber-800/60 transition-all cursor-pointer h-full flex flex-col">
                 <div className="w-10 h-10 rounded-md bg-amber-900/30 flex items-center justify-center mb-4 group-hover:bg-amber-900/50 transition-colors">
