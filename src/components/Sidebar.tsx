@@ -49,7 +49,7 @@ export function Sidebar() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           </svg>
         </Link>
-        <Link 
+        <a 
           href="/finance-3way-match/" 
           className={`h-10 w-full rounded flex items-center justify-center transition-colors ${pathname?.startsWith('/finance-3way-match') ? 'bg-neutral-800 text-neutral-200' : 'text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300'}`}
           title="Finance 3-Way Match & Reconciliation"
@@ -57,7 +57,7 @@ export function Sidebar() {
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
           </svg>
-        </Link>
+        </a>
       </nav>
       
       {/* Sign Out Button */}

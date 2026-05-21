@@ -90,7 +90,7 @@ export default function HubDashboard() {
               </div>
             </Link>
 
-            <Link href="/finance-3way-match/" className="group block">
+            <a href="/finance-3way-match/" className="group block">
               <div className="p-6 rounded-lg border border-cyan-900/40 bg-cyan-950/20 hover:bg-cyan-900/20 hover:border-cyan-800/60 transition-all cursor-pointer h-full flex flex-col">
                 <div className="w-10 h-10 rounded-md bg-cyan-900/30 flex items-center justify-center mb-4 group-hover:bg-cyan-900/50 transition-colors">
                   <svg className="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -106,7 +106,7 @@ export default function HubDashboard() {
                   <span className="text-xs font-medium text-cyan-600 uppercase tracking-wider ml-auto">Launch Tool &rarr;</span>
                 </div>
               </div>
-            </Link>
+            </a>
 
             <Link href="/ot-verification" className="group block">
               <div className="p-6 rounded-lg border border-amber-900/40 bg-amber-950/20 hover:bg-amber-900/20 hover:border-amber-800/60 transition-all cursor-pointer h-full flex flex-col">
