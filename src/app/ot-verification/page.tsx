@@ -6,6 +6,7 @@ import { runOtVerification } from '@/utils/otVerificationEngine'
 import { uploadEvidenceAction } from '@/actions/uploadEvidence'
 import { LayoutContainer } from '@/components/LayoutContainer'
 import { AiInsightPanel } from '@/components/AiInsightPanel'
+import { PlaybookContent } from '@/components/PlaybookContent'
 
 type UploadState = 'idle' | 'dragging' | 'ready'
 type StepStatus = 'pending' | 'running' | 'done' | 'error'
@@ -107,6 +108,7 @@ export default function OtVerificationPage() {
   const [employeeListing, setEmployeeListing] = useState<FileSlot>({ state: 'idle', file: null, base64: null })
   const [photos, setPhotos] = useState<{ state: UploadState; files: File[] }>({ state: 'idle', files: [] })
 
+  const [activeTab, setActiveTab] = useState<'verify' | 'playbook'>('verify')
   const [steps, setSteps] = useState<Step[]>(STEPS.map(s => ({ ...s })))
   const [running, setRunning] = useState(false)
   const [outputB64, setOutputB64] = useState<string | null>(null)
@@ -337,122 +339,148 @@ export default function OtVerificationPage() {
             <p className="text-sm text-neutral-500 mt-1">Validate DST and MINOR OT allowance claims against attendance timesheets for PNHR, PFS, and GM companies. Includes automated photo evidence matching.</p>
           </div>
 
-          {/* Upload Panel */}
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 flex flex-col gap-5">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest">Step 1 — Upload Required Files & Photos</p>
-              <p className="text-[10px] text-neutral-600">{[attendance, claims, template].filter(f => f.state === 'ready').length}/3 required · {photos.files.length} photos · {employeeListing.state === 'ready' ? '1' : '0'} listing</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <UploadZone slot="attendance" label="File A — Attendance Data" hint="Attandance April-3companies.xlsx" color="blue" fileSlot={attendance} onFile={f => handleFile(f, 'attendance')} />
-              <UploadZone slot="claims" label="File B — Manager Claims" hint="MINOR & DST Attanance April.xlsx" color="amber" fileSlot={claims} onFile={f => handleFile(f, 'claims')} />
-              <UploadZone slot="template" label="File C — OT Allowance Template (DST or MINOR)" hint="OT_Allowance_blank.xlsx" color="emerald" fileSlot={template} onFile={f => handleFile(f, 'template')} />
-              <UploadZone slot="employeeListing" label="File D — Employee Listing (Optional)" hint="EmployeeListing.xlsx" color="violet" fileSlot={employeeListing} onFile={f => handleFile(f, 'employeeListing')} />
-            </div>
-            <UploadZone slot="photos" label="Evidence Photos" hint="Upload all site photos (Name_MM-DD.jpg)" color="indigo" fileSlot={photos} onFile={f => handleFile(f, 'photos')} multiple={true} />
-
-            {globalError && (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg border border-red-800/40 bg-red-900/15">
-                <svg className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                <p className="text-xs text-red-300">{globalError}</p>
-              </div>
-            )}
-
-            {/* Pre-flight AI Panel — full-width, below the 2×2 upload grid */}
-            {preflightChecks && (() => {
-              const passCount = preflightChecks.filter(c => c.status === 'pass').length
-              const failCount = preflightChecks.filter(c => c.status === 'fail').length
-              const summary = failCount > 0
-                ? `${failCount} critical issue${failCount > 1 ? 's' : ''} detected — resolve before running verification.`
-                : `${passCount}/${preflightChecks.length} checks passed — file structure looks good.`
-              return (
-                <AiInsightPanel
-                  type="pre-flight"
-                  title="AI Pre-flight Check"
-                  summary={summary}
-                  checks={preflightChecks}
-                />
-              )
-            })()}
+          {/* Tab Control */}
+          <div className="flex border-b border-neutral-850 gap-6 mb-2">
+            <button
+              onClick={() => setActiveTab('verify')}
+              className={`pb-3 text-xs font-semibold uppercase tracking-widest transition-all border-b-2 ${
+                activeTab === 'verify' ? 'border-amber-500 text-neutral-100 font-bold' : 'border-transparent text-neutral-500 hover:text-neutral-300'
+              }`}
+            >
+              Verify OT
+            </button>
+            <button
+              onClick={() => setActiveTab('playbook')}
+              className={`pb-3 text-xs font-semibold uppercase tracking-widest transition-all border-b-2 ${
+                activeTab === 'playbook' ? 'border-amber-500 text-neutral-100 font-bold' : 'border-transparent text-neutral-500 hover:text-neutral-300'
+              }`}
+            >
+              User Guide &amp; Playbook
+            </button>
           </div>
 
-          {/* Progress Panel */}
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest">Step 2 — Run Verification</p>
-              <div className="w-40 h-1 bg-neutral-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 rounded-full transition-all duration-500"
-                  style={{ width: `${steps.filter(s => s.status === 'done').length / steps.length * 100}%` }} />
+          {activeTab === 'verify' ? (
+            <>
+              {/* Upload Panel */}
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 flex flex-col gap-5">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest">Step 1 — Upload Required Files & Photos</p>
+                  <p className="text-[10px] text-neutral-600">{[attendance, claims, template].filter(f => f.state === 'ready').length}/3 required · {photos.files.length} photos · {employeeListing.state === 'ready' ? '1' : '0'} listing</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <UploadZone slot="attendance" label="File A — Attendance Data" hint="Attandance April-3companies.xlsx" color="blue" fileSlot={attendance} onFile={f => handleFile(f, 'attendance')} />
+                  <UploadZone slot="claims" label="File B — Manager Claims" hint="MINOR & DST Attanance April.xlsx" color="amber" fileSlot={claims} onFile={f => handleFile(f, 'claims')} />
+                  <UploadZone slot="template" label="File C — OT Allowance Template (DST or MINOR)" hint="OT_Allowance_blank.xlsx" color="emerald" fileSlot={template} onFile={f => handleFile(f, 'template')} />
+                  <UploadZone slot="employeeListing" label="File D — Employee Listing (Optional)" hint="EmployeeListing.xlsx" color="violet" fileSlot={employeeListing} onFile={f => handleFile(f, 'employeeListing')} />
+                </div>
+                <UploadZone slot="photos" label="Evidence Photos" hint="Upload all site photos (Name_MM-DD.jpg)" color="indigo" fileSlot={photos} onFile={f => handleFile(f, 'photos')} multiple={true} />
+
+                {globalError && (
+                  <div className="flex items-start gap-2 px-3 py-2 rounded-lg border border-red-800/40 bg-red-900/15">
+                    <svg className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <p className="text-xs text-red-300">{globalError}</p>
+                  </div>
+                )}
+
+                {/* Pre-flight AI Panel — full-width, below the 2×2 upload grid */}
+                {preflightChecks && (() => {
+                  const passCount = preflightChecks.filter(c => c.status === 'pass').length
+                  const failCount = preflightChecks.filter(c => c.status === 'fail').length
+                  const summary = failCount > 0
+                    ? `${failCount} critical issue${failCount > 1 ? 's' : ''} detected — resolve before running verification.`
+                    : `${passCount}/${preflightChecks.length} checks passed — file structure looks good.`
+                  return (
+                    <AiInsightPanel
+                      type="pre-flight"
+                      title="AI Pre-flight Check"
+                      summary={summary}
+                      checks={preflightChecks}
+                    />
+                  )
+                })()}
               </div>
-            </div>
-            <div className="flex flex-col gap-3">
-              {steps.map((step, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <StepIcon status={step.status} />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm ${step.status === 'pending' ? 'text-neutral-600' : 'text-neutral-300'}`}>{step.label}</p>
-                    {step.detail && <p className="text-[10px] text-neutral-500 mt-0.5">{step.detail}</p>}
+
+              {/* Progress Panel */}
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest">Step 2 — Run Verification</p>
+                  <div className="w-40 h-1 bg-neutral-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 rounded-full transition-all duration-500"
+                      style={{ width: `${steps.filter(s => s.status === 'done').length / steps.length * 100}%` }} />
                   </div>
                 </div>
-              ))}
-            </div>
-            <div className="flex gap-3 mt-1">
-              <button id="btn-run-verification" disabled={!canRun} onClick={handleRun}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center justify-center gap-2">
-                {running && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                {running ? 'Verifying…' : 'Run Verification'}
-              </button>
-              {(attendance.file || claims.file || template.file || photos.files.length > 0) && (
-                <button onClick={handleReset} disabled={running}
-                  className="px-4 py-2.5 rounded-xl text-sm font-medium text-neutral-400 hover:text-neutral-200 border border-neutral-800 hover:border-neutral-700 disabled:opacity-40 transition-all duration-150"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Results Panel */}
-          {summary && (
-            <div className="rounded-2xl border border-amber-800/40 bg-amber-900/5 p-5 flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div>
-                <p className="text-[11px] font-semibold text-amber-500 uppercase tracking-widest mb-3">OT Verification Summary — April 2026</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <StatCard value={summary.totalEmployees} label="Employees" />
-                  <StatCard value={summary.totalClaimedDays} label="Claimed Days" />
-                  <StatCard value={summary.totalEligibleDays} label="Eligible Days" color="emerald" />
-                  <StatCard value={summary.totalDiscrepancyDays} label="Discrepancy Days" color="amber" />
-                  <StatCard value={`$${summary.totalOriginalAmount}`} label="Original Amount" />
-                  <StatCard value={`$${summary.totalCalculatedAmount}`} label="Calculated Amount" color="emerald" />
-                  <StatCard value={`$${summary.netDifference}`} label="Net Difference" color={netColor} />
-                  <StatCard value={summary.photoCount || 0} label="Evidence Photos Linked" color="blue" />
+                <div className="flex flex-col gap-3">
+                  {steps.map((step, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <StepIcon status={step.status} />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm ${step.status === 'pending' ? 'text-neutral-600' : 'text-neutral-300'}`}>{step.label}</p>
+                        {step.detail && <p className="text-[10px] text-neutral-500 mt-0.5">{step.detail}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-3 mt-1">
+                  <button id="btn-run-verification" disabled={!canRun} onClick={handleRun}
+                    className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center justify-center gap-2">
+                    {running && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                    {running ? 'Verifying…' : 'Run Verification'}
+                  </button>
+                  {(attendance.file || claims.file || template.file || photos.files.length > 0) && (
+                    <button onClick={handleReset} disabled={running}
+                      className="px-4 py-2.5 rounded-xl text-sm font-medium text-neutral-400 hover:text-neutral-200 border border-neutral-800 hover:border-neutral-700 disabled:opacity-40 transition-all duration-150"
+                    >
+                      Reset
+                    </button>
+                  )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-neutral-800">
-                <div className="flex flex-col gap-1">
-                  <p className="text-[10px] text-neutral-500 uppercase tracking-widest">Exceptions Flagged</p>
-                  <p className="text-lg font-bold font-mono text-red-400">{summary.exceptionCount}</p>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <p className="text-[10px] text-neutral-500 uppercase tracking-widest">Conflicts Resolved</p>
-                  <p className="text-lg font-bold font-mono text-amber-400">{summary.conflictCount}</p>
-                </div>
-              </div>
+              {/* Results Panel */}
+              {summary && (
+                <div className="rounded-2xl border border-amber-800/40 bg-amber-900/5 p-5 flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div>
+                    <p className="text-[11px] font-semibold text-amber-500 uppercase tracking-widest mb-3">OT Verification Summary — April 2026</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <StatCard value={summary.totalEmployees} label="Employees" />
+                      <StatCard value={summary.totalClaimedDays} label="Claimed Days" />
+                      <StatCard value={summary.totalEligibleDays} label="Eligible Days" color="emerald" />
+                      <StatCard value={summary.totalDiscrepancyDays} label="Discrepancy Days" color="amber" />
+                      <StatCard value={`$${summary.totalOriginalAmount}`} label="Original Amount" />
+                      <StatCard value={`$${summary.totalCalculatedAmount}`} label="Calculated Amount" color="emerald" />
+                      <StatCard value={`$${summary.netDifference}`} label="Net Difference" color={netColor} />
+                      <StatCard value={summary.photoCount || 0} label="Evidence Photos Linked" color="blue" />
+                    </div>
+                  </div>
 
-              <button id="btn-download-ot" onClick={handleDownload}
-                className="w-full px-4 py-3 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-all duration-150 flex items-center justify-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                Download Verified Report (.xlsx)
-              </button>
+                  <div className="grid grid-cols-2 gap-3 pt-1 border-t border-neutral-800">
+                    <div className="flex flex-col gap-1">
+                      <p className="text-[10px] text-neutral-500 uppercase tracking-widest">Exceptions Flagged</p>
+                      <p className="text-lg font-bold font-mono text-red-400">{summary.exceptionCount}</p>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-[10px] text-neutral-500 uppercase tracking-widest">Conflicts Resolved</p>
+                      <p className="text-lg font-bold font-mono text-amber-400">{summary.conflictCount}</p>
+                    </div>
+                  </div>
 
-              {errors.length > 0 && (
-                <div className="flex flex-col gap-1 max-h-32 overflow-y-auto p-2 bg-black/20 rounded border border-neutral-800">
-                  {errors.map((e, i) => <p key={i} className="text-[10px] text-yellow-400">⚠ {e}</p>)}
+                  <button id="btn-download-ot" onClick={handleDownload}
+                    className="w-full px-4 py-3 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-all duration-150 flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Download Verified Report (.xlsx)
+                  </button>
+
+                  {errors.length > 0 && (
+                    <div className="flex flex-col gap-1 max-h-32 overflow-y-auto p-2 bg-black/20 rounded border border-neutral-800">
+                      {errors.map((e, i) => <p key={i} className="text-[10px] text-yellow-400">⚠ {e}</p>)}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
+          ) : (
+            <PlaybookContent />
           )}
 
         </div>
