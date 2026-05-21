@@ -7,6 +7,7 @@ import { uploadEvidenceAction } from '@/actions/uploadEvidence'
 import { LayoutContainer } from '@/components/LayoutContainer'
 import { AiInsightPanel } from '@/components/AiInsightPanel'
 import { PlaybookContent } from '@/components/PlaybookContent'
+import { getSupabaseClient } from '@/utils/supabase'
 
 type UploadState = 'idle' | 'dragging' | 'ready'
 type StepStatus = 'pending' | 'running' | 'done' | 'error'
@@ -238,6 +239,40 @@ export default function OtVerificationPage() {
 
   const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+  const logUsage = async (status: 'success' | 'error', summaryData?: any, errMsg?: string) => {
+    try {
+      const supabase = getSupabaseClient()
+      if (!supabase) return
+      
+      const payload: any = {
+        tool_type: 'hard-services',
+        action: 'run_automation',
+        status,
+        error_message: errMsg || null,
+        meta: null
+      }
+      
+      if (summaryData) {
+        payload.meta = {
+          totalEmployees: summaryData.totalEmployees || 0,
+          totalClaimedDays: summaryData.totalClaimedDays || 0,
+          totalEligibleDays: summaryData.totalEligibleDays || 0,
+          totalDiscrepancyDays: summaryData.totalDiscrepancyDays || 0,
+          totalOriginalAmount: summaryData.totalOriginalAmount || 0,
+          totalCalculatedAmount: summaryData.totalCalculatedAmount || 0,
+          netDifference: summaryData.netDifference || 0,
+          photoCount: summaryData.photoCount || 0,
+          exceptionCount: summaryData.exceptionCount || 0,
+          conflictCount: summaryData.conflictCount || 0
+        }
+      }
+      
+      await supabase.from('usage_audit_logs').insert([payload])
+    } catch (err) {
+      console.error('Usage logging failed:', err)
+    }
+  }
+
   const handleRun = async () => {
     if (!attendance.base64 || !claims.base64 || !template.base64) return
     setRunning(true); setOutputB64(null); setSummary(null); setErrors([]); setGlobalError(null)
@@ -291,10 +326,13 @@ export default function OtVerificationPage() {
       setOutputB64(result.outputBase64)
       setSummary({ ...result.summary, photoCount: evidenceMetadata.length })
       if (result.errors.length) setErrors(result.errors)
+      logUsage('success', { ...result.summary, photoCount: evidenceMetadata.length }).catch(err => console.error('Usage logging async error:', err))
     } catch (e: any) {
       const failIdx = steps.findIndex(s => s.status === 'running')
       updateStep(failIdx >= 0 ? failIdx : 4, { status: 'error' })
-      setGlobalError(e.message ?? 'Verification failed.')
+      const errMsg = e.message ?? 'Verification failed.'
+      setGlobalError(errMsg)
+      logUsage('error', undefined, errMsg).catch(err => console.error('Usage logging async error:', err))
     } finally {
       setRunning(false)
     }

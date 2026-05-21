@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx'
 import { LayoutContainer } from '@/components/LayoutContainer'
 import { AiInsightPanel } from '@/components/AiInsightPanel'
 import { runSoftServicesEngine, SheetStatus } from '@/utils/softServicesEngine'
+import { getSupabaseClient } from '@/utils/supabase'
 
 export const runtime = 'edge'
 
@@ -170,6 +171,36 @@ export default function SoftServicesPage() {
     }
   }, [runPreflightScan, timeSheet.base64, attendance.base64, attendance2.base64, report.base64])
 
+  const logUsage = async (status: 'success' | 'error', summaryData?: any, errMsg?: string) => {
+    try {
+      const supabase = getSupabaseClient()
+      if (!supabase) return
+      
+      const payload: any = {
+        tool_type: 'soft-services',
+        action: 'run_automation',
+        status,
+        error_message: errMsg || null,
+        meta: null
+      }
+      
+      if (summaryData) {
+        payload.meta = {
+          totalEmployees: summaryData.totalEmployees || 0,
+          targetMonth: summaryData.targetMonth || 'Unknown',
+          totalPt: summaryData.totalPt || 0,
+          totalOt15: typeof summaryData.totalOt15 === 'number' ? summaryData.totalOt15 : parseFloat(summaryData.totalOt15) || 0,
+          totalOt20Days: typeof summaryData.totalOt20Days === 'number' ? summaryData.totalOt20Days : parseFloat(summaryData.totalOt20Days) || 0,
+          totalOt20AdditionalHrs: typeof summaryData.totalOt20AdditionalHrs === 'number' ? summaryData.totalOt20AdditionalHrs : parseFloat(summaryData.totalOt20AdditionalHrs) || 0
+        }
+      }
+      
+      await supabase.from('usage_audit_logs').insert([payload])
+    } catch (err) {
+      console.error('Usage logging failed:', err)
+    }
+  }
+
   const handleRun = async () => {
     if (!timeSheet.base64 || !attendance.base64 || !report.base64) return
     setRunning(true); setError(null); setResults(null)
@@ -178,13 +209,18 @@ export default function SoftServicesPage() {
       if (attendance2.base64) attFiles.push(attendance2.base64)
       const res = await runSoftServicesEngine(timeSheet.base64, attFiles, report.base64)
       if (res.errors.length && !res.attendanceBase64) {
-        setError(res.errors[0])
+        const errorMsg = res.errors[0]
+        setError(errorMsg)
+        logUsage('error', undefined, errorMsg).catch(err => console.error('Usage logging async error:', err))
       } else {
         setResults(res)
         if (res.errors.length) setError(`Warnings: ${res.errors.join('; ')}`)
+        logUsage('success', res.summary).catch(err => console.error('Usage logging async error:', err))
       }
     } catch (e: any) {
-      setError(e.message)
+      const errorMsg = e.message || 'Unknown error occurred'
+      setError(errorMsg)
+      logUsage('error', undefined, errorMsg).catch(err => console.error('Usage logging async error:', err))
     } finally {
       setRunning(false)
     }
