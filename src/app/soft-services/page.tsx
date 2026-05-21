@@ -2,7 +2,9 @@
 
 import { useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
+import * as XLSX from 'xlsx'
 import { LayoutContainer } from '@/components/LayoutContainer'
+import { AiInsightPanel } from '@/components/AiInsightPanel'
 import { runSoftServicesEngine, SheetStatus } from '@/utils/softServicesEngine'
 
 export const runtime = 'edge'
@@ -18,6 +20,7 @@ export default function SoftServicesPage() {
   const [running, setRunning] = useState(false)
   const [results, setResults] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
+  const [preflightChecks, setPreflightChecks] = useState<{ label: string; status: 'pass' | 'warn' | 'fail'; detail: string }[] | null>(null)
 
   const readB64 = (file: File): Promise<string> =>
     new Promise((res, rej) => {
@@ -27,16 +30,144 @@ export default function SoftServicesPage() {
       r.readAsDataURL(file)
     })
 
+  // ---------------------------------------------------------------------------
+  // PRE-FLIGHT SCANNER
+  // Reads already-in-memory Base64 blobs; no server calls needed.
+  // ---------------------------------------------------------------------------
+  const runPreflightScan = useCallback((
+    tsB64: string | null,
+    attB64: string | null,
+    att2B64: string | null,
+    repB64: string | null
+  ) => {
+    const checks: { label: string; status: 'pass' | 'warn' | 'fail'; detail: string }[] = []
+
+    // ── 1. Raw Time Sheet ────────────────────────────────────────────────────
+    if (tsB64) {
+      try {
+        const wb = XLSX.read(tsB64, { type: 'base64' })
+        const hasEmpAtt = wb.SheetNames.includes('EmployeeAttendance')
+        checks.push({
+          label: 'Sheet: EmployeeAttendance',
+          status: hasEmpAtt ? 'pass' : 'fail',
+          detail: hasEmpAtt
+            ? 'EmployeeAttendance sheet found'
+            : 'Missing — engine requires this exact sheet name',
+        })
+
+        if (hasEmpAtt) {
+          const ws = wb.Sheets['EmployeeAttendance']
+          const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null }) as any[][]
+          const hdr = (rows[0] || []).map((h: any) => String(h ?? '').trim())
+          const required = ['Employee Code', 'Date', 'Time In', 'Time Out']
+          const missing = required.filter(c => !hdr.includes(c))
+          checks.push({
+            label: 'Time Sheet Headers',
+            status: missing.length === 0 ? 'pass' : 'fail',
+            detail: missing.length === 0
+              ? 'All required columns present'
+              : `Missing column(s): ${missing.join(', ')}`,
+          })
+
+          const dataRows = rows.slice(1).filter(r => r[hdr.indexOf('Employee Code')])
+          checks.push({
+            label: 'Time Sheet Data',
+            status: dataRows.length > 0 ? 'pass' : 'warn',
+            detail: dataRows.length > 0
+              ? `${dataRows.length} employee record row(s) detected`
+              : 'No data rows found — file may be empty',
+          })
+        }
+      } catch {
+        checks.push({ label: 'Time Sheet Parse', status: 'fail', detail: 'Could not read time sheet file' })
+      }
+    }
+
+    // ── 2. Attendance Sheet(s) ───────────────────────────────────────────────
+    const attSlots: [string | null, string][] = [[attB64, 'Attendance 1'], [att2B64, 'Attendance 2']]
+    for (const [b64, label] of attSlots) {
+      if (!b64) continue
+      try {
+        const wb = XLSX.read(b64, { type: 'base64' })
+        const realSheets = wb.SheetNames.filter(n => !/^sheet\d*$/i.test(n))
+        checks.push({
+          label: `${label}: Site Sheets`,
+          status: realSheets.length > 0 ? 'pass' : 'warn',
+          detail: realSheets.length > 0
+            ? `${realSheets.length} site sheet(s) found`
+            : 'Only default Sheet tabs found — may be blank',
+        })
+
+        if (realSheets.length > 0) {
+          const ws = wb.Sheets[realSheets[0]]
+          const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null }) as any[][]
+          const dateRow = rows[3] || []
+          const hasDates = dateRow.some((v: any) => {
+            if (!v) return false
+            const s = String(v)
+            return /\d{1,2}\/\d{1,2}\/\d{4}/.test(s) || /\d{4}-\d{2}-\d{2}/.test(s) || (!isNaN(Number(v)) && Number(v) > 40000)
+          })
+          checks.push({
+            label: `${label}: Date Headers (Row 4)`,
+            status: hasDates ? 'pass' : 'warn',
+            detail: hasDates
+              ? 'Date row detected in row 4'
+              : 'No dates found in row 4 — structure may differ',
+          })
+
+          const hasCodes = rows.some(row => row[2] && /^G/i.test(String(row[2]).trim()))
+          checks.push({
+            label: `${label}: Cleaner Codes`,
+            status: hasCodes ? 'pass' : 'warn',
+            detail: hasCodes
+              ? 'Cleaner G-codes found in column C'
+              : 'No G-prefixed codes in column C — verify format',
+          })
+        }
+      } catch {
+        checks.push({ label: `${label} Parse`, status: 'fail', detail: `Could not read ${label} file` })
+      }
+    }
+
+    // ── 3. OT Checking Report ────────────────────────────────────────────────
+    if (repB64) {
+      try {
+        const wb = XLSX.read(repB64, { type: 'base64' })
+        checks.push({
+          label: 'OT Report Template',
+          status: wb.SheetNames.length > 0 ? 'pass' : 'fail',
+          detail: wb.SheetNames.length > 0
+            ? `Template ready — ${wb.SheetNames.length} sheet(s)`
+            : 'No sheets found in OT report template',
+        })
+      } catch {
+        checks.push({ label: 'OT Report Parse', status: 'fail', detail: 'Could not read OT report template' })
+      }
+    }
+
+    setPreflightChecks(checks.length > 0 ? checks : null)
+  }, [])
+
   const handleFile = useCallback(async (file: File, slot: 'ts' | 'att' | 'att2' | 'rep') => {
     setError(null)
     if (!file.name.match(/\.(xlsx|xls|xlsb)$/i)) { setError('Only .xlsx / .xls / .xlsb files are accepted.'); return }
     const b64 = await readB64(file)
     const s: FileSlot = { file, base64: b64 }
-    if (slot === 'ts') setTimeSheet(s)
-    else if (slot === 'att') setAttendance(s)
-    else if (slot === 'att2') setAttendance2(s)
-    else setReport(s)
-  }, [])
+    // Update slot state, then trigger pre-flight scan with the freshest values
+    if (slot === 'ts') {
+      setTimeSheet(s)
+      runPreflightScan(b64, attendance.base64, attendance2.base64, report.base64)
+    } else if (slot === 'att') {
+      setAttendance(s)
+      runPreflightScan(timeSheet.base64, b64, attendance2.base64, report.base64)
+    } else if (slot === 'att2') {
+      setAttendance2(s)
+      runPreflightScan(timeSheet.base64, attendance.base64, b64, report.base64)
+    } else {
+      setReport(s)
+      runPreflightScan(timeSheet.base64, attendance.base64, attendance2.base64, b64)
+    }
+  }, [runPreflightScan, timeSheet.base64, attendance.base64, attendance2.base64, report.base64])
 
   const handleRun = async () => {
     if (!timeSheet.base64 || !attendance.base64 || !report.base64) return
@@ -56,6 +187,17 @@ export default function SoftServicesPage() {
     } finally {
       setRunning(false)
     }
+  }
+
+  const handleReset = () => {
+    setTimeSheet({ file: null, base64: null })
+    setAttendance({ file: null, base64: null })
+    setAttendance2({ file: null, base64: null })
+    setReport({ file: null, base64: null })
+    setResults(null)
+    setError(null)
+    setPreflightChecks(null)
+    setRunning(false)
   }
 
   const downloadFile = (b64: string, filename: string) => {
@@ -88,11 +230,37 @@ export default function SoftServicesPage() {
         </div>
 
         {/* Upload Zones */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <UploadZone label="1. Raw Time Sheet" file={timeSheet.file} onFile={f => handleFile(f, 'ts')} hint="NHGP TIME SHEET.xlsx" color="blue" />
-          <UploadZone label="2. Attendance 1" file={attendance.file} onFile={f => handleFile(f, 'att')} hint="NHGP ATTENDANCE 1.xlsx" color="emerald" />
-          <UploadZone label="3. Attendance 2 (Opt)" file={attendance2.file} onFile={f => handleFile(f, 'att2')} hint="NHGP ATTENDANCE 2.xlsb" color="emerald" />
-          <UploadZone label="4. OT Checking Report" file={report.file} onFile={f => handleFile(f, 'rep')} hint="OT checking (1).xlsx" color="amber" />
+        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 flex flex-col gap-5">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest">Step 1 — Upload Required Files</p>
+            <p className="text-[10px] text-neutral-600">
+              {[timeSheet, attendance, report].filter(f => f.file).length}/3 required
+              {attendance2.file ? ' · Att 2 loaded' : ''}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <UploadZone label="1. Raw Time Sheet" file={timeSheet.file} onFile={f => handleFile(f, 'ts')} hint="NHGP TIME SHEET.xlsx" color="blue" />
+            <UploadZone label="2. Attendance 1" file={attendance.file} onFile={f => handleFile(f, 'att')} hint="NHGP ATTENDANCE 1.xlsx" color="emerald" />
+            <UploadZone label="3. Attendance 2 (Opt)" file={attendance2.file} onFile={f => handleFile(f, 'att2')} hint="NHGP ATTENDANCE 2.xlsb" color="emerald" />
+            <UploadZone label="4. OT Checking Report" file={report.file} onFile={f => handleFile(f, 'rep')} hint="OT checking (1).xlsx" color="amber" />
+          </div>
+
+          {/* AI Pre-flight Check Panel */}
+          {preflightChecks && (() => {
+            const passCount = preflightChecks.filter(c => c.status === 'pass').length
+            const failCount = preflightChecks.filter(c => c.status === 'fail').length
+            const summary = failCount > 0
+              ? `${failCount} critical issue${failCount > 1 ? 's' : ''} detected — resolve before running automation.`
+              : `${passCount}/${preflightChecks.length} checks passed — file structure looks good.`
+            return (
+              <AiInsightPanel
+                type="pre-flight"
+                title="AI Pre-flight Check"
+                summary={summary}
+                checks={preflightChecks}
+              />
+            )
+          })()}
         </div>
 
         {/* Run Button */}
@@ -107,6 +275,14 @@ export default function SoftServicesPage() {
             {running && <div className="w-4 h-4 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />}
             {running ? 'Processing in Browser…' : 'Run Automation'}
           </button>
+
+          {(timeSheet.file || attendance.file || report.file) && !running && !results && (
+            <button onClick={handleReset}
+              className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
+            >
+              Reset all files
+            </button>
+          )}
 
           {error && (
             <div className="flex items-start gap-2 px-4 py-3 rounded-xl border border-yellow-800/40 bg-yellow-900/10 max-w-lg w-full">
