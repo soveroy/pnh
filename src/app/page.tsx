@@ -4,7 +4,7 @@ import { LayoutContainer } from '@/components/LayoutContainer';
 
 export default function HubDashboard() {
   return (
-    <LayoutContainer title="PNH AI Hub" showPdpaBadge={false}>
+    <LayoutContainer title="PNH AI Hub" showPdpaBadge={true}>
       <div className="flex flex-col gap-8 h-full">
         <section>
           <h2 className="text-sm font-medium text-neutral-300 mb-4 uppercase tracking-wider">AI Workflow Demos</h2>
