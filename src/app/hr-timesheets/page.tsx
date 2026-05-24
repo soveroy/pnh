@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LayoutContainer } from '@/components/LayoutContainer';
 import { UploadArea } from '@/components/UploadArea';
 import { ActionBar } from '@/components/ActionBar';
@@ -21,6 +21,17 @@ export default function HRTimesheetsPage() {
   const [isValidating, setIsValidating] = useState(false);
   const [validation, setValidation] = useState<{ label: string, status: 'pass' | 'warn' | 'fail', detail: string }[] | null>(null);
   const [insights, setInsights] = useState<{ summary: string, totalAdjusted: number } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/notify-usage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool: 'hr-timesheets',
+        action: 'page_visit'
+      })
+    }).catch(err => console.error('Failed to notify page visit:', err))
+  }, [])
 
   const handleFilesReady = async (csv: string, excel: string) => {
     setCsvPath(csv);
@@ -59,12 +70,42 @@ export default function HRTimesheetsPage() {
         setConfidence(result.confidenceScore);
         setDownloadPath('READY');
         if (result.insights) setInsights(result.insights);
+
+        // Notify usage centrally (fail-safe)
+        fetch('/api/notify-usage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tool: 'hr-timesheets',
+            action: 'run_automation',
+            status: 'success',
+            meta: {
+              rowsCount: result.rows.length,
+              confidenceScore: result.confidenceScore,
+              totalAdjusted: result.insights?.totalAdjusted || 0
+            }
+          })
+        }).catch(err => console.error('Usage logging async error:', err));
+
       } else {
         throw new Error(result.error || 'Reconciliation failed');
       }
 
     } catch (error: any) {
       alert(`Error during reconciliation: ${error.message}`);
+      
+      // Notify usage centrally of failure
+      fetch('/api/notify-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool: 'hr-timesheets',
+          action: 'run_automation',
+          status: 'error',
+          errorMessage: error.message
+        })
+      }).catch(err => console.error('Usage logging async error:', err));
+
     } finally {
       setIsProcessing(false);
     }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
 import { LayoutContainer } from '@/components/LayoutContainer'
@@ -23,6 +23,17 @@ export default function SoftServicesPage() {
   const [error, setError] = useState<string | null>(null)
   const [preflightChecks, setPreflightChecks] = useState<{ label: string; status: 'pass' | 'warn' | 'fail'; detail: string }[] | null>(null)
   const [activeTab, setActiveTab] = useState<'engine' | 'playbook'>('engine')
+
+  useEffect(() => {
+    fetch('/api/notify-usage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool: 'soft-services',
+        action: 'page_visit'
+      })
+    }).catch(err => console.error('Failed to notify page visit:', err))
+  }, [])
 
   const readB64 = (file: File): Promise<string> =>
     new Promise((res, rej) => {
@@ -173,14 +184,11 @@ export default function SoftServicesPage() {
 
   const logUsage = async (status: 'success' | 'error', summaryData?: any, errMsg?: string) => {
     try {
-      const supabase = getSupabaseClient()
-      if (!supabase) return
-      
       const payload: any = {
-        tool_type: 'soft-services',
+        tool: 'soft-services',
         action: 'run_automation',
         status,
-        error_message: errMsg || null,
+        errorMessage: errMsg || null,
         meta: null
       }
       
@@ -195,7 +203,11 @@ export default function SoftServicesPage() {
         }
       }
       
-      await supabase.from('usage_audit_logs').insert([payload])
+      await fetch('/api/notify-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
     } catch (err) {
       console.error('Usage logging failed:', err)
     }

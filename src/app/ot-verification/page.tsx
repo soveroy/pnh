@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { runOtVerification } from '@/utils/otVerificationEngine'
 import { uploadEvidenceAction } from '@/actions/uploadEvidence'
@@ -113,6 +113,17 @@ export default function OtVerificationPage() {
   const [steps, setSteps] = useState<Step[]>(STEPS.map(s => ({ ...s })))
   const [running, setRunning] = useState(false)
   const [outputB64, setOutputB64] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/notify-usage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool: 'hard-services',
+        action: 'page_visit'
+      })
+    }).catch(err => console.error('Failed to notify page visit:', err))
+  }, [])
   const [summary, setSummary] = useState<any>(null)
   const [errors, setErrors] = useState<string[]>([])
   const [globalError, setGlobalError] = useState<string | null>(null)
@@ -241,14 +252,11 @@ export default function OtVerificationPage() {
 
   const logUsage = async (status: 'success' | 'error', summaryData?: any, errMsg?: string) => {
     try {
-      const supabase = getSupabaseClient()
-      if (!supabase) return
-      
       const payload: any = {
-        tool_type: 'hard-services',
+        tool: 'hard-services',
         action: 'run_automation',
         status,
-        error_message: errMsg || null,
+        errorMessage: errMsg || null,
         meta: null
       }
       
@@ -267,7 +275,11 @@ export default function OtVerificationPage() {
         }
       }
       
-      await supabase.from('usage_audit_logs').insert([payload])
+      await fetch('/api/notify-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
     } catch (err) {
       console.error('Usage logging failed:', err)
     }

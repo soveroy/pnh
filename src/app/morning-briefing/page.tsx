@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ManagementView } from '@/components/morning-briefing/ManagementView';
 import { DepartmentView } from '@/components/morning-briefing/DepartmentView';
 import { mockDepartmentData, mockManagementData } from '@/data/morning-briefing-data';
@@ -14,6 +14,17 @@ const TABS: Tab[] = ['Management', 'Operations', 'Procurement', 'Safety', 'HR Ma
 
 export default function MorningBriefingPage() {
   const [activeTab, setActiveTab] = useState<Tab>('Management');
+
+  useEffect(() => {
+    fetch('/api/notify-usage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool: 'morning-briefing',
+        action: 'page_visit'
+      })
+    }).catch(err => console.error('Failed to notify page visit:', err))
+  }, [])
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 font-sans selection:bg-indigo-500/30">

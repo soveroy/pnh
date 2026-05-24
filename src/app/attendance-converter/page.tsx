@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { convertAttendanceAction, validateSourceAction, ValidationResult } from '@/actions/convertAttendance'
 import { AiInsightPanel } from '@/components/AiInsightPanel'
@@ -48,6 +48,17 @@ export default function AttendanceConverterPage() {
 
   const sourceInputRef = useRef<HTMLInputElement>(null)
   const templateInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    fetch('/api/notify-usage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool: 'attendance-converter',
+        action: 'page_visit'
+      })
+    }).catch(err => console.error('Failed to notify page visit:', err))
+  }, [])
 
   // ── File reading ────────────────────────────────────────────────────────────
   const readFileAsBase64 = (file: File): Promise<string> =>
@@ -154,15 +165,37 @@ export default function AttendanceConverterPage() {
       result = await convertAttendanceAction(source.base64, template.base64)
     } catch (e: any) {
       updateStep(1, { status: 'error' })
-      setGlobalError(e.message || 'Unexpected error.')
+      const errorMsg = e.message || 'Unexpected error.'
+      setGlobalError(errorMsg)
       setIsConverting(false)
+      fetch('/api/notify-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool: 'attendance-converter',
+          action: 'run_automation',
+          status: 'error',
+          errorMessage: errorMsg
+        })
+      }).catch(err => console.error('Usage logging async error:', err))
       return
     }
 
     if (!result.success) {
       updateStep(1, { status: 'error' })
-      setGlobalError(result.error || 'Conversion failed.')
+      const errorMsg = result.error || 'Conversion failed.'
+      setGlobalError(errorMsg)
       setIsConverting(false)
+      fetch('/api/notify-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool: 'attendance-converter',
+          action: 'run_automation',
+          status: 'error',
+          errorMessage: errorMsg
+        })
+      }).catch(err => console.error('Usage logging async error:', err))
       return
     }
 
@@ -175,6 +208,22 @@ export default function AttendanceConverterPage() {
     if (result.insights) setInsights(result.insights)
     if (result.errors?.length) setErrors(result.errors)
     setIsConverting(false)
+
+    // Notify usage centrally (fail-safe)
+    fetch('/api/notify-usage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool: 'attendance-converter',
+        action: 'run_automation',
+        status: 'success',
+        meta: {
+          employees: result.employeeCount,
+          days: result.dayCount,
+          score: result.insights?.score || 0
+        }
+      })
+    }).catch(err => console.error('Usage logging async error:', err))
   }
 
   // ── Download ────────────────────────────────────────────────────────────────
